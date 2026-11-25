@@ -159,51 +159,34 @@ then:
 |---|---|
 | `build` and `release` | macOS, Windows and Linux installers, published as a GitHub Release (0.x releases are pre-releases). hippoherd.com's download buttons read them. |
 | `web` | The web build is pushed into jfigge/hippoherd, which redeploys [hippoherd.com/duelhippo/](https://hippoherd.com/duelhippo/). |
-| `ios` | The iPhone app is archived and uploaded to App Store Connect, where it appears in TestFlight. |
-| `app-store` | The upload is submitted for App Store review (`tools/asc-submit.mjs`). |
 
-Running the workflow from the Actions tab builds and signs everything but
-publishes nothing. Use that to check the setup before you spend a tag.
+Running the workflow from the Actions tab builds everything but publishes
+nothing. Use it to check a build before you spend a tag.
 
-### One-time setup
-1. **Create the app in App Store Connect.** Go to My Apps → + → New App and
-   use bundle id `com.duelhippo.app`. This can't be done through the API.
-   Before the first review, fill in the listing: description, screenshots,
-   privacy answers, age rating and a support URL. The submit step stops with
-   Apple's list of anything that is missing.
-2. **Add the repository secrets.** The names are the ones the sibling apps use;
-   `release.yml` lists them all.
-   - `CSC_LINK` and `CSC_KEY_PASSWORD`, plus `APPLE_ID`,
-     `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`, sign and notarize the
-     Mac download.
-   - `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` and `APPLE_API_KEY_BASE64` are the
-     App Store Connect API key, used to upload and submit.
-   - `APPLE_DIST_CSC_LINK` and `APPLE_DIST_CSC_KEY_PASSWORD` are an Apple
-     Distribution `.p12`. They're optional if the API key has the Admin role.
-   - `HIPPOHERD_TOKEN` is a fine-grained token with read and write access to
-     the contents of jfigge/hippoherd only.
-3. **Set the repository variables.**
-   - `APP_STORE_ENABLED=true` turns on uploads.
-   - `APP_STORE_SUBMIT=true` also submits each upload for review.
-   - `APP_STORE_RELEASE=MANUAL` holds an approved version until you release it.
-     The default publishes it as soon as Apple approves it.
+The iPhone app (`make ios`, `make ios-phone`) still builds, but it isn't being
+released. The release workflow ignores it, and so does the hippoherd page.
 
-A channel with no secrets is skipped with a notice, so the desktop releases
-work before any of the App Store setup is done.
+### Repository secrets
+`release.yml` lists them; the names are the ones the sibling apps use. Each
+is optional: anything whose secrets are missing is skipped with a notice.
+
+- **Mac signing and notarization:** `CSC_LINK` and `CSC_KEY_PASSWORD`, plus
+  `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. Without them
+  the Mac download is unsigned, and macOS won't open it for most people.
+- **`HIPPOHERD_TOKEN`:** a fine-grained token with read and write access to
+  the contents of jfigge/hippoherd only, used by the `web` job.
+- **Repository variable `NET_URL`:** the two-player server, built into every
+  release.
 
 ### By hand
 - `make dist-mac`, `make dist-win` and `make dist-linux` build the installers
   into `dist/`. The Mac build is signed and notarized when `release.env` has
   the credentials.
-- `make ios-upload` archives the iPhone app and uploads it, using your Xcode
-  account. To submit that build for review, run
-  `make ios-submit BUILD_NUMBER_SUBMIT=<n>`; it needs the API key variables.
 - `make site` copies the web build into a hippoherd checkout (`HIPPOHERD=`,
   by default `../hippoherd`). Commit and push it there.
 
 hippoherd generates the page about the game at `/duelhippo/about/` from its
-`content/hippos.mjs`. When the game is on the App Store, replace
-`APP_STORE_SOON` there with `APP_STORE("<listing url>")`.
+`content/hippos.mjs`.
 
 ## Layout
 

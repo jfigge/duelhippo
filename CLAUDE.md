@@ -121,15 +121,19 @@ passed to `bindInput()`, so it imports nothing it controls.
   - The colour `#279B2B` also appears in hippoherd's `content/hippos.mjs`.
 - **Releases.** Pushing a tag `v<version>` that matches `src/package.json`
   runs `.github/workflows/release.yml`. It builds the desktop installers,
-  publishes the GitHub Release, pushes the web build to hippoherd, uploads the
-  iPhone app and submits it for review. Each channel is gated on its own
-  secrets and variables.
-  - The CI jobs call the same make targets as local runs (`ios-archive`,
-    `ios-upload`), so change the targets, not the YAML.
+  publishes the GitHub Release, and pushes the web build to hippoherd. Each
+  of those is gated on its own secrets and variables.
+  - The released products are the desktop apps (macOS, Windows, Linux) and
+    the web version.
+  - The iPhone app still builds (`make ios`, and `ios-archive`, `ios-upload`
+    and `tools/asc-submit.mjs` for the App Store), but it isn't released and
+    must not be mentioned on the website.
   - Keep the installer names in a form hippoherd's `classify()` understands.
     That is why the NSIS installer's name contains "Setup": without it,
     hippoherd reads the `.exe` as a portable build.
   - A workflow-dispatch run must never publish anything.
+  - Run `actionlint` on workflow changes. A YAML parser alone missed a
+    duplicated `on:` once, and GitHub rejected the whole file.
 - **The website.** `make site` copies `src/www` into
   `../hippoherd/website/duelhippo/`. It leaves `about/` alone, because
   hippoherd generates that page.
