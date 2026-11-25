@@ -1,0 +1,40 @@
+# ── Build outputs ─────────────────────────────────────────────────────────────
+# src/www is the Vite bundle (make web-build); dist/ is electron-builder's;
+# data/ is the Electron user-data dir `make debug` runs against.
+src/www/
+build/
+dist/
+data/
+
+# ── Node / npm ────────────────────────────────────────────────────────────────
+# Any node_modules, including the Vite cache under src/web/node_modules/.vite.
+node_modules/
+npm-debug.log*
+
+# ── iOS ───────────────────────────────────────────────────────────────────────
+# src/ios/.gitignore (Capacitor's) covers the copied web bundle and generated
+# config inside the Xcode project; these are Xcode's own.
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# ── Credentials: never committed ──────────────────────────────────────────────
+keys/
+certs/
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.env
+!*.env.example
+
+# ── The prototype's own installs and screenshots (features/prototype/) ────────
+features/prototype/node_modules/
+features/prototype/shots/
+
+# ── macOS / editors ───────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+*.swp
+.electron-builder-cache/

@@ -1,0 +1,12 @@
+{
+  "appId": "com.duelhippo.app",
+  "appName": "Duel Hippo",
+  "webDir": "www",
+  "ios": {
+    "path": "ios",
+    "scheme": "App",
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "backgroundColor": "#000000"
+  }
+}

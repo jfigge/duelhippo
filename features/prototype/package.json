@@ -1,0 +1,19 @@
+{
+  "name": "duelhippo",
+  "version": "0.1.0",
+  "description": "Duel Hippo — a 3D biplane dogfighter in the spirit of the classic DOS game Sopwith. Part of the Hippo family.",
+  "author": "Jason (jfigge)",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "playtest": "npm run build && node scripts/playtest.mjs && node scripts/landtest.mjs"
+  },
+  "dependencies": {
+    "three": "0.128.0"
+  },
+  "devDependencies": {
+    "@fontsource/press-start-2p": "^5.3.0",
+    "@fontsource/vt323": "^5.3.0",
+    "playwright": "^1.63.0"
+  }
+}
