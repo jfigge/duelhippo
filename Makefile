@@ -36,6 +36,34 @@ DEVICE   ?=
 PHONE    ?=
 -include $(WORKSPACE)/dev.env
 
+# ── Release signing ───────────────────────────────────────────────────────────
+# The herd's release.env, read the way Rest Hippo's, JsonHippo's and
+# hippoherd's Makefiles read it: credentials for SIGNED, notarized installers,
+# all optional. With none set, electron-builder emits unsigned artifacts and
+# skips notarization. The certificates are the herd's, so a sibling's file
+# works as it is:
+#
+#     make dist-mac RELEASE_ENV=../resthippo/release.env
+#
+# In CI the same names come from repository secrets (.github/workflows/
+# release.yml). Each is exported only when set AND non-empty: an empty
+# CSC_LINK reads to electron-builder as "a certificate was given" and fails
+# the build with "… not a file".
+RELEASE_ENV ?= $(WORKSPACE)/release.env
+RELEASE_ENV_VARS := CSC_LINK CSC_KEY_PASSWORD CSC_IDENTITY_AUTO_DISCOVERY \
+                    APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID \
+                    APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+-include $(RELEASE_ENV)
+$(foreach v,$(RELEASE_ENV_VARS),$(if $(strip $(value $(v))),$(eval export $(v)),$(eval unexport $(v))))
+
+# A checkout of jfigge/hippoherd. The game is published at
+# hippoherd.com/duelhippo/: `make site` copies the web bundle into its
+# website/duelhippo/. hippoherd's own page about the game is generated there,
+# at website/duelhippo/about/ (`page` in its content/hippos.mjs), so the copy
+# leaves that one directory alone.
+HIPPOHERD ?= $(abspath $(WORKSPACE)/../hippoherd)
+SITE_DIR  := $(HIPPOHERD)/website/duelhippo
+
 # `make ios` picks the simulator by name unless DEVICE names a phone by udid
 # (`make ios-list`).
 # Live reload: the simulator reaches this Mac as localhost; a phone needs its
@@ -45,8 +73,8 @@ LIVE_HOST  ?= $(if $(strip $(DEVICE)),$(shell ipconfig getifaddr en0 2>/dev/null
 .DEFAULT_GOAL := help
 
 .PHONY: help install debug web web-build web-preview ios ios-phone ios-live \
-        ios-sync ios-launch ios-open ios-list build test lint fmt fmt-check \
-        license-headers clean
+        ios-sync ios-launch ios-open ios-list build dist-mac dist-win \
+        dist-linux icons site test lint fmt fmt-check license-headers clean
 
 help:
 	@echo ""
@@ -67,9 +95,20 @@ help:
 	@echo "    web-build     Production bundle → src/www/ (what Electron and iOS ship)"
 	@echo "    web-preview   Serve that bundle as a browser would get it"
 	@echo "    build         Unsigned Electron app for this machine → dist/ (smoke test)"
+	@echo "    dist-mac      macOS .dmg (arm64, x64) → dist/; signed and notarized when"
+	@echo "                  RELEASE_ENV ($(notdir $(RELEASE_ENV))) has the credentials"
+	@echo "    dist-win      Windows installer (x64, arm64) → dist/"
+	@echo "    dist-linux    Linux AppImage (x64, arm64) → dist/"
+	@echo "    icons         Redraw every app icon from src/icons/duelhippo.svg"
 	@echo "    ios-sync      Copy the bundle into the Xcode project"
 	@echo "    ios-open      Open the Xcode project"
 	@echo "    ios-list      List simulators and phones ios can target"
+	@echo ""
+	@echo "  Publish:"
+	@echo "    site          Test, then copy the web build into a hippoherd checkout"
+	@echo "                  (HIPPOHERD=$(HIPPOHERD)) at website/duelhippo/"
+	@echo "    Releases: bump version in src/package.json, then push tag v<version>;"
+	@echo "    .github/workflows/release.yml builds and publishes the installers."
 	@echo ""
 	@echo "  Check:"
 	@echo "    test          Unit tests, and the port-vs-prototype equivalence suite"
@@ -115,6 +154,39 @@ build: web-build
 	cd "$(SRC_DIR)" && CSC_IDENTITY_AUTO_DISCOVERY=false "$(BIN)/electron-builder" \
 		--dir --publish never -c.mac.notarize=false
 	@echo "  → $(DIST_DIR)/"
+
+# Installers, as the Release workflow builds them on each platform's runner.
+# Signing and notarization follow RELEASE_ENV (above); with nothing there,
+# keychain discovery is off so a local build is predictably unsigned.
+DIST_ENV := $(if $(strip $(CSC_LINK)),,CSC_IDENTITY_AUTO_DISCOVERY=false)
+
+dist-mac: web-build
+	cd "$(SRC_DIR)" && $(DIST_ENV) "$(BIN)/electron-builder" --mac --publish never
+	@echo "  → $(DIST_DIR)/"
+
+dist-win: web-build
+	cd "$(SRC_DIR)" && "$(BIN)/electron-builder" --win --publish never
+	@echo "  → $(DIST_DIR)/"
+
+dist-linux: web-build
+	cd "$(SRC_DIR)" && "$(BIN)/electron-builder" --linux --publish never
+	@echo "  → $(DIST_DIR)/"
+
+# Every icon comes from the one drawing, src/icons/duelhippo.svg, rasterised
+# under Electron (tools/make-icons.mjs says why). The outputs are committed.
+icons: install
+	cd "$(SRC_DIR)" && "$(BIN)/electron" tools/make-icons.mjs
+
+# ─── Publish ──────────────────────────────────────────────────────────────────
+# The web build to hippoherd.com/duelhippo/. --delete keeps it an exact mirror
+# of src/www except for about/, hippoherd's page about the game. Tests run
+# first so a red build never reaches the site. Commit and push in hippoherd
+# afterwards; its CI deploys on push.
+site: test web-build
+	@test -d "$(HIPPOHERD)/website" || { echo "No hippoherd checkout at $(HIPPOHERD) — set HIPPOHERD=…"; exit 1; }
+	@mkdir -p "$(SITE_DIR)"
+	rsync -a --delete --exclude .DS_Store --exclude /about/ "$(WWW_DIR)/" "$(SITE_DIR)/"
+	@echo "Published to $(SITE_DIR)/ — review, commit and push it in hippoherd."
 
 # ─── iOS (Capacitor) ──────────────────────────────────────────────────────────
 # src/ios/ is a normal Xcode project, committed; `cap sync` copies src/www into

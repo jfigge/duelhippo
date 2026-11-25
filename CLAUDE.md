@@ -95,6 +95,21 @@ passed to `bindInput()`, so it imports nothing it controls.
 - `src/app/main.js` serves `www/` over `app://duelhippo/`, not `file://`.
 - The preload exposes `window.duelhippo` and nothing else.
 
+## Icons, releases and the website
+- **Icons.** `src/icons/duelhippo.svg` is the drawing of record. Every icon is
+  rasterised from it by `make icons`: Mac, Windows, Linux, the iOS app icon,
+  the launch screen and the favicons. Never hand-edit the PNGs.
+  - hippoherd's `scripts/make-marks.mjs` copies the motif character for
+    character, so a change here has to be copied there too.
+  - The colour `#279B2B` also appears in hippoherd's `content/hippos.mjs`.
+- **Releases.** Pushing a tag `v<version>` that matches `src/package.json`
+  runs `.github/workflows/release.yml`. Keep the installer names in a form
+  hippoherd's `classify()` understands. That is why the NSIS installer's name
+  contains "Setup": without it, hippoherd reads the `.exe` as a portable build.
+- **The website.** `make site` copies `src/www` into
+  `../hippoherd/website/duelhippo/`. It leaves `about/` alone, because
+  hippoherd generates that page.
+
 ## Conventions
 - **License header.** Every first-party JS, MJS and CSS file under `src/app`,
   `src/web` and `src/tools` starts with the GPL header. `make test` checks it

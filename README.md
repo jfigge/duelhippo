@@ -77,6 +77,40 @@ auto-level.
 To set your own defaults for these variables, copy `dev.env.example` to
 `dev.env`.
 
+## Icons
+
+Every icon comes from one drawing, `src/icons/duelhippo.svg`: the Hippo
+family mark in Duel Hippo's green (`#279B2B`), with a propeller on its snout.
+`make icons` redraws the rest of them from it:
+
+- the macOS icon, on the standard grid with a transparent margin;
+- the Windows `.ico` and the Linux set;
+- the iPhone app icon (full bleed, with no alpha channel) and its launch
+  screen;
+- the web favicon and `apple-touch-icon`.
+
+hippoherd's `scripts/make-marks.mjs` copies the drawing, so edit it here first
+and then rerun that script there.
+
+## Releases and the website
+
+- **Desktop installers.** Set `version` in `src/package.json`, commit, then
+  push the tag `v<version>`. `.github/workflows/release.yml` builds the
+  installers on macOS, Windows and Linux runners and publishes them as a
+  GitHub Release. Releases numbered 0.x are marked as pre-releases.
+  - The macOS build is signed and notarized once the repository has the same
+    secrets as the sibling apps (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
+    `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`).
+  - To build installers locally, use `make dist-mac`, `make dist-win` or
+    `make dist-linux`.
+- **[hippoherd.com/duelhippo/](https://hippoherd.com/duelhippo/)** is where the
+  game is played in the browser. `make site` runs the tests, then copies the web
+  build into a hippoherd checkout (`HIPPOHERD=`, by default `../hippoherd`).
+  Commit and push it there.
+- **The page about the game** is at `/duelhippo/about/`. hippoherd generates it
+  from `content/hippos.mjs`, and its download buttons pick up each new GitHub
+  Release by themselves.
+
 ## Layout
 
 ```
@@ -86,12 +120,13 @@ src/
   package.json      all dependencies, and electron-builder's config
   vite.config.mjs   web/ → www/
   capacitor.config.json
+  icons/            duelhippo.svg, the one drawing every icon is made from
   web/              the game: index.html, styles/, scripts/
     scripts/        world, flight, ai, weapons, audio, hud, input, camera, …
     scripts/tests/  the equivalence harness and suites
   app/              Electron main process and preload
   ios/              the Xcode project (Capacitor)
-  tools/            dev-electron.mjs (make debug), license-header.mjs
+  tools/            dev-electron.mjs (make debug), make-icons.mjs, license-header.mjs
 ```
 
 ## Licence
