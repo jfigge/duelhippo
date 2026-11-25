@@ -82,7 +82,7 @@ LIVE_HOST  ?= $(if $(strip $(DEVICE)),$(shell ipconfig getifaddr en0 2>/dev/null
 .PHONY: help install debug web web-build web-preview ios ios-phone ios-live \
         ios-sync ios-launch ios-open ios-list build dist-mac dist-win \
         dist-linux icons site ios-archive ios-upload ios-submit server \
-        server-deploy server-install test lint fmt \
+        server-deploy server-install release test lint fmt \
         fmt-check license-headers clean
 
 help:
@@ -126,10 +126,11 @@ help:
 	@echo "                  set NET_URL to the wss:// address it prints"
 	@echo ""
 	@echo "  Publish:"
+	@echo "    release       make release VERSION=x.y.z: check, confirm, test, bump"
+	@echo "                  src/package.json, tag and push; the tag runs the Release"
+	@echo "                  workflow (installers, GitHub Release, hippoherd.com)"
 	@echo "    site          Test, then copy the web build into a hippoherd checkout"
 	@echo "                  (HIPPOHERD=$(HIPPOHERD)) at website/duelhippo/"
-	@echo "    Releases: bump version in src/package.json, then push tag v<version>;"
-	@echo "    .github/workflows/release.yml builds and publishes the installers."
 	@echo ""
 	@echo "  Check:"
 	@echo "    test          Unit tests, and the port-vs-prototype equivalence suite"
@@ -210,6 +211,86 @@ site: test web-build
 	@mkdir -p "$(SITE_DIR)"
 	rsync -a --delete --exclude .DS_Store --exclude /about/ "$(WWW_DIR)/" "$(SITE_DIR)/"
 	@echo "Published to $(SITE_DIR)/ — review, commit and push it in hippoherd."
+
+# ─── Release ──────────────────────────────────────────────────────────────────
+#   make release VERSION=1.0.0
+#
+# Checks first, changing nothing: VERSION is x.y.z and above the current one,
+# this is a clean `main` that is not behind origin, and the tag is new. Then
+# it asks. On a yes: the tests and lint run, src/package.json (and its lock)
+# take the new version in a "Release vX" commit, and that commit and its tag
+# go to origin in one atomic push. The tag push is what starts
+# .github/workflows/release.yml; this then watches that run (with gh) until it
+# finishes. YES=1 skips the question, for scripts.
+#
+# Nothing is pushed if anything before the push fails; a failed push leaves
+# the commit and tag local, and says how to retry or undo them.
+MAIN_BRANCH ?= main
+
+release:
+	@set -e; \
+	NEW="$(VERSION)"; \
+	if ! printf '%s' "$$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		echo "Usage: make release VERSION=x.y.z   (got '$$NEW')"; exit 1; \
+	fi; \
+	CURRENT=$$(cd "$(SRC_DIR)" && node -p "require('./package.json').version"); \
+	if ! node -e 'const [a, b] = process.argv.slice(1).map((v) => v.split(".").map(Number)); \
+		for (let i = 0; i < 3; i++) if (a[i] !== b[i]) process.exit(b[i] > a[i] ? 0 : 1); \
+		process.exit(1);' "$$CURRENT" "$$NEW"; then \
+		echo "$$NEW is not above the current version, $$CURRENT."; exit 1; \
+	fi; \
+	BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$BRANCH" != "$(MAIN_BRANCH)" ]; then \
+		echo "Releases are cut from $(MAIN_BRANCH); this is $$BRANCH."; exit 1; \
+	fi; \
+	if [ -n "$$(git status --porcelain --untracked-files=no)" ]; then \
+		echo "Uncommitted changes: commit or stash them first."; git status --short --untracked-files=no; exit 1; \
+	fi; \
+	echo "Fetching origin…"; \
+	git fetch --quiet --tags origin; \
+	if git rev-parse -q --verify "refs/tags/v$$NEW" >/dev/null; then \
+		echo "Tag v$$NEW already exists."; exit 1; \
+	fi; \
+	if ! git merge-base --is-ancestor "origin/$(MAIN_BRANCH)" HEAD; then \
+		echo "$(MAIN_BRANCH) is behind origin (or has diverged): pull first."; exit 1; \
+	fi; \
+	echo ""; \
+	echo "  Duel Hippo $$CURRENT → $$NEW"; \
+	echo "  Test and lint, commit \"Release v$$NEW\", tag v$$NEW, push $(MAIN_BRANCH) and the tag."; \
+	echo "  The tag starts the Release workflow: signed installers for macOS, Windows"; \
+	echo "  and Linux, a GitHub Release, and the web build on hippoherd.com."; \
+	echo ""; \
+	if [ "$(YES)" != "1" ]; then \
+		printf "Release v$$NEW? [y/N] "; read ans; \
+		case "$$ans" in y|Y|yes|YES) ;; *) echo "Not released."; exit 1 ;; esac; \
+	fi; \
+	echo "Running the tests and lint…"; \
+	$(MAKE) -s test lint || { echo "Checks failed: nothing was changed."; exit 1; }; \
+	(cd "$(SRC_DIR)" && npm version "$$NEW" --no-git-tag-version --allow-same-version >/dev/null); \
+	git add "$(SRC_DIR)/package.json" "$(SRC_DIR)/package-lock.json"; \
+	git commit -q -m "Release v$$NEW"; \
+	git tag -a "v$$NEW" -m "Duel Hippo $$NEW"; \
+	echo "Pushing $(MAIN_BRANCH) and v$${NEW}…"; \
+	if ! git push -q --atomic origin "$(MAIN_BRANCH)" "v$$NEW"; then \
+		echo ""; \
+		echo "The push failed, so nothing was released. The commit and tag are local:"; \
+		echo "  retry:  git push --atomic origin $(MAIN_BRANCH) v$$NEW"; \
+		echo "  undo:   git tag -d v$$NEW && git reset --hard HEAD~1"; \
+		exit 1; \
+	fi; \
+	echo "Released v$$NEW. The Release workflow is starting…"; \
+	if ! command -v gh >/dev/null; then \
+		echo "Follow it in the repository's Actions tab."; exit 0; \
+	fi; \
+	RUN=""; \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		RUN=$$(gh run list --workflow release.yml --branch "v$$NEW" --limit 1 \
+			--json databaseId -q '.[0].databaseId' 2>/dev/null || true); \
+		[ -n "$$RUN" ] && break; sleep 3; \
+	done; \
+	if [ -z "$$RUN" ]; then echo "Follow it in the repository's Actions tab."; exit 0; fi; \
+	gh run watch "$$RUN" --exit-status || { echo "The Release workflow failed: gh run view $$RUN --log-failed"; exit 1; }; \
+	gh release view "v$$NEW" --json url -q .url
 
 # ─── iOS (Capacitor) ──────────────────────────────────────────────────────────
 # src/ios/ is a normal Xcode project, committed; `cap sync` copies src/www into

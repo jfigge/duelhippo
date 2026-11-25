@@ -99,10 +99,10 @@ export function client({ keyPem, keyId, issuer, fetch = globalThis.fetch }) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const log = (...a) => console.log(...a);
 
 export async function submit(call, opts) {
   const {
+    log = (...a) => console.log(...a),
     bundleId,
     version,
     build,

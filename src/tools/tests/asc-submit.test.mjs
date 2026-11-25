@@ -97,7 +97,7 @@ const APP = {
 const build = (state) => ({
   body: { data: [{ id: "b1", attributes: { processingState: state } }] },
 });
-const quiet = { pollMs: 0, waitMs: 60_000 };
+const quiet = { pollMs: 0, waitMs: 60_000, log: () => {} };
 
 test("first release: waits for processing, creates the version, submits it", async () => {
   const { calls, call } = fakeApple({

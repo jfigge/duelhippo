@@ -123,6 +123,8 @@ passed to `bindInput()`, so it imports nothing it controls.
   runs `.github/workflows/release.yml`. It builds the desktop installers,
   publishes the GitHub Release, and pushes the web build to hippoherd. Each
   of those is gated on its own secrets and variables.
+  - `make release VERSION=x.y.z` is how a release is cut: it checks, asks,
+    tests, bumps, tags, pushes and watches. Tag by hand only to retry one.
   - The released products are the desktop apps (macOS, Windows, Linux) and
     the web version.
   - The iPhone app still builds (`make ios`, and `ios-archive`, `ios-upload`

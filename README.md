@@ -151,9 +151,18 @@ and then rerun that script there.
 request. It runs the tests (including the equivalence suite), lint, the format
 check and the web build, and it compiles the iPhone app for the simulator.
 
-`.github/workflows/release.yml` does a whole release from one tag. Set
-`version` in `src/package.json`, commit, then push `v<version>`. The workflow
-then:
+To release, run `make release VERSION=x.y.z` on a clean, up-to-date `main`.
+1. It checks that the version is above the current one and that the tag is
+   new.
+2. It asks you to confirm.
+3. It runs the tests and lint.
+4. It bumps `src/package.json` in a "Release vX" commit, tags it, and pushes
+   the commit and the tag together.
+5. It watches the Release workflow until it finishes.
+
+If anything fails before the push, nothing is pushed.
+
+`.github/workflows/release.yml` does a whole release from that one tag:
 
 | Job | Result |
 |---|---|
