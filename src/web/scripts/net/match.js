@@ -29,6 +29,9 @@
 //     count them
 //   - in Endless enemies each machine flies the flyer at its seat; hits on
 //     it are reported to that machine, which says when it falls and to whom
+//   - missiles (missiles.js) are flown on every machine from their launch;
+//     the plane they chase decides whether one hit it, and a flyer's owner
+//     hears of a missile hit as three hits
 //
 // Every machine works out for itself when the match is over, from what all
 // of them have said (who is out, who has left, whose flag has fallen); they
@@ -66,6 +69,7 @@ import {
 } from "../remote.js";
 import { net, send, myTeam, teamOf, canHurt, isMode } from "./bus.js";
 import { packState, unpackState } from "./protocol.js";
+import { launch, lockers, targetNamed } from "../missiles.js";
 import { TEAM } from "./teams.js";
 import { recordMatch, MAX_SCORE } from "../scores.js";
 
@@ -105,6 +109,7 @@ export function beginMatch(finish, recorded = () => {}) {
   flagsDown.clear();
   fins.clear();
   counting = false;
+  lockers.clear();
   window.clearTimeout(finTimer);
   onEnd = finish;
   onRecord = recorded;
@@ -279,6 +284,7 @@ function settle(late = false) {
 export function peerLeft(seat) {
   if (game.state !== "play" || gone.has(seat)) return;
   gone.add(seat);
+  lockers.delete(seat);
   const r = remotes.get(seat);
   if (r) {
     r.gone = r.out = true;
@@ -314,6 +320,7 @@ export function matchMessage(m, from) {
     case "tg":
       return applyTarget(m.i, m.d);
     case "down":
+      lockers.delete(from);
       if (vec(m.p, o)) boom(o.clone(), true);
       if (m.by === net.seat) {
         if (teamOf(from) === myTeam())
@@ -342,6 +349,17 @@ export function matchMessage(m, from) {
       return;
     case "eh":
       return hitMine(m, from);
+    case "ms": {
+      const t = targetNamed(m.to);
+      if (t && vec(m.o, o) && vec(m.d, d) && Number.isFinite(m.s))
+        launch(o, d, m.s, t, "r", from);
+      return;
+    }
+    case "lk":
+      if (m.to !== net.seat) return;
+      if (m.on) lockers.add(from);
+      else lockers.delete(from);
+      return;
     case "ek":
       return theirKill(m, from);
   }
@@ -349,10 +367,11 @@ export function matchMessage(m, from) {
 
 // ── Endless enemies: the flyers ─────────────────────────────────────────────
 // Ours, hit by another player's rounds: its owner (this machine) decides.
-function hitMine({ i }, from) {
+function hitMine({ i, n }, from) {
   const e = enemies[i];
   if (!isMode("endless") || !e || !e.alive || !ownsEnemy(e)) return;
-  if (--e.hp <= 0) killEnemy(e, false, from);
+  e.hp -= Number.isInteger(n) && n > 0 && n <= 3 ? n : 1;
+  if (e.hp <= 0) killEnemy(e, false, from);
 }
 
 // Another machine's flyer is down, and maybe by this player's hand.

@@ -24,6 +24,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadPort } from "./harness.js";
+import { PROTO } from "../net/protocol.js";
 import { fakeServer, tick, hash } from "./fake-server.js";
 
 const game = await loadPort(13);
@@ -60,10 +61,10 @@ test("a flag game: one flag per team, beside its field", async () => {
   $("onCode").value = "ABCD";
   $("onGo").click();
   await tick(10);
-  net.from(0, { t: "hi", v: 3, h: hash("a"), n: "Ace" });
+  net.from(0, { t: "hi", v: PROTO, h: hash("a"), n: "Ace" });
   net.from(0, {
     t: "setup",
-    v: 3,
+    v: PROTO,
     layout: "2x1",
     mode: "flag",
     ff: false,

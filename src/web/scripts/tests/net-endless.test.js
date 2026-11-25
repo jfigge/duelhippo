@@ -24,6 +24,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadPort } from "./harness.js";
+import { PROTO } from "../net/protocol.js";
 import { fakeServer, tick, hash, state } from "./fake-server.js";
 
 const game = await loadPort(12);
@@ -51,11 +52,11 @@ test("joining: a hello to each player already there", async () => {
 });
 
 test("the organiser's setup is ours; anyone else's is not", () => {
-  net.from(0, { t: "hi", v: 3, h: hash("a"), n: "Ace" });
-  net.from(1, { t: "hi", v: 3, h: hash("b"), n: "Bo" });
+  net.from(0, { t: "hi", v: PROTO, h: hash("a"), n: "Ace" });
+  net.from(1, { t: "hi", v: PROTO, h: hash("b"), n: "Bo" });
   const setup = {
     t: "setup",
-    v: 3,
+    v: PROTO,
     layout: "3x1",
     mode: "endless",
     ff: false,
@@ -68,8 +69,12 @@ test("the organiser's setup is ours; anyone else's is not", () => {
   };
   net.from(1, { ...setup, mode: "flag" });
   assert.doesNotMatch($("onDesc").textContent, /flag/i);
+  net.from(0, { ...setup, mode: "flag" });
+  assert.match($("onRules").textContent, /flag/i);
   net.from(0, setup);
   assert.match($("onDesc").textContent, /Endless enemies/);
+  assert.match($("onRules").textContent, /ghost/, "the rules follow the mode");
+  assert.doesNotMatch($("onRules").textContent, /flag/i);
   assert.equal($("onTeams").querySelectorAll(".team").length, 3);
   assert.ok($("onLayout").disabled, "only the organiser picks");
 });
@@ -127,6 +132,16 @@ test("our flyer, hit by others: we decide, and say who got it", () => {
   for (let i = 0; i < 3; i++) net.from(1, { t: "eh", i: 2 });
   assert.ok(!duel.enemies[2].alive);
   assert.deepEqual(net.sent("ek")[0], { t: "ek", i: 2, by: 1 });
+});
+
+test("a missile hit on our flyer counts three; nonsense counts one", () => {
+  game.run(4500); // our flyer is back
+  const e = duel.enemies[2];
+  assert.ok(e.alive);
+  net.from(1, { t: "eh", i: 2, n: 50 });
+  assert.equal(e.hp, 2);
+  net.from(1, { t: "eh", i: 2, n: 3 });
+  assert.ok(!e.alive);
 });
 
 test("out of planes: we fly on as a ghost, and say so", () => {

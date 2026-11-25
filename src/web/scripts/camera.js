@@ -22,18 +22,30 @@
 // Classic: a side camera on +z that follows the plane, near or far (C), so
 // trees, clouds and hangars at different depths give parallax — the reason
 // DESIGN.md rules out an orthographic camera. Free: a lagging chase camera,
-// or the cockpit (C). Title screen: a slow orbit of the home airfield.
+// or the cockpit (C), or down the sights (Shift, Caps Lock). Title screen: a
+// slow orbit of the home airfield.
 
 import { UP, tv, basis } from "./util.js";
-import { HOME } from "./constants.js";
+import { HOME, ADS } from "./constants.js";
 import { camera } from "./scene.js";
 import { game } from "./state.js";
 import { groundY } from "./world.js";
-import { P, PB, crashAt } from "./flight.js";
+import { P, PB, crashAt, aiming } from "./flight.js";
 
 let orbitT = 0;
+const FOV = camera.fov;
+
+// Zoom in or out towards the sights' field of view. Untouched when there is
+// nothing to do, so a game that never aims never changes the projection.
+function zoom(dt, want) {
+  if (camera.fov === want) return;
+  camera.fov += (want - camera.fov) * (1 - Math.exp(-dt * ADS.ease));
+  if (Math.abs(camera.fov - want) < 0.05) camera.fov = want;
+  camera.updateProjectionMatrix();
+}
 
 export function updCamera(dt) {
+  zoom(dt, aiming() ? ADS.fov : FOV);
   if (game.state !== "play") {
     orbitT += dt * 0.07;
     camera.up.set(0, 1, 0);
@@ -60,6 +72,17 @@ export function updCamera(dt) {
     camera.position.z += (dist - camera.position.z) * k;
     camera.up.set(0, 1, 0);
     camera.lookAt(camera.position.x, camera.position.y - 5, 0);
+    return;
+  }
+  if (aiming()) {
+    // Down the sights: on the guns' centre line, between the two muzzles, so
+    // the middle of the screen is where the rounds go.
+    camera.position
+      .copy(P.pos)
+      .addScaledVector(b.u, 0.6)
+      .addScaledVector(b.f, 2);
+    camera.quaternion.copy(P.q);
+    P.obj.visible = false;
     return;
   }
   if (game.camZoom === 1) {

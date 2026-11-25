@@ -34,6 +34,12 @@ export const Q = THREE.Quaternion;
 export const PI = Math.PI;
 
 export const $ = (id) => document.getElementById(id);
+// A setting's button: its name, dimmed by the stylesheet, then its value.
+export function setLabel(el, name, value) {
+  const i = document.createElement("i");
+  i.textContent = name;
+  el.replaceChildren(i, " " + value);
+}
 export const rnd = (a = 1, b) =>
   b === undefined ? Math.random() * a : a + Math.random() * (b - a);
 export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);

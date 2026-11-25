@@ -19,10 +19,11 @@
 
 // audio.js — synthesized 8-bit sound, Web Audio only, no asset files.
 //
-// Unchanged from the prototype (DESIGN.md, "8-bit audio"). Nothing makes a
-// sound until init() runs from a user gesture (the start buttons), which is
-// what browsers, Electron and iOS's WKWebView all require before an
-// AudioContext may play.
+// The prototype's (DESIGN.md, "8-bit audio"), plus the missiles' tones: the
+// lock building and made, the launch, and the warning to the plane being
+// locked or chased. Nothing makes a sound until init() runs from a user
+// gesture (the start buttons), which is what browsers, Electron and iOS's
+// WKWebView all require before an AudioContext may play.
 
 import { clamp } from "./util.js";
 
@@ -140,6 +141,19 @@ export const sfx = (() => {
     },
     tick() {
       blip(660, 990, 0.05, 0.03);
+    },
+    lockTick() {
+      blip(1400, 1400, 0.06, 0.03);
+    },
+    lock() {
+      blip(1900, 1900, 0.3, 0.045);
+    },
+    launch() {
+      noise(0.6, 0.12, 3000, 0.7);
+      blip(400, 1200, 0.3, 0.05);
+    },
+    warn() {
+      blip(980, 700, 0.12, 0.05);
     },
     boom(big, d = 0) {
       const k = clamp(1 - d / 1800, 0.12, 1);

@@ -30,7 +30,7 @@
 // name, and the hashes of everyone on the roster name the group's scoreboard
 // (scores.js), whose copies are swapped and merged as the roster settles.
 
-import { $ } from "../util.js";
+import { $, setLabel } from "../util.js";
 import { net } from "./bus.js";
 import { serverUrl, serverHint } from "./config.js";
 import { Mesh } from "./link.js";
@@ -40,6 +40,7 @@ import {
   LAYOUTS,
   layout,
   MODES,
+  RULES,
   TEAM,
   autoTeam,
   fitRoster,
@@ -367,11 +368,12 @@ function refresh() {
     b.classList.toggle("on", b.dataset.gmode === setup.mode);
     b.disabled = !boss;
   }
-  $("onFF").textContent = setup.ff ? "FRIENDLY FIRE ON" : "FRIENDLY FIRE OFF";
+  setLabel($("onFF"), "Friendly fire", setup.ff ? "on" : "off");
   $("onFF").classList.toggle("on", setup.ff);
   $("onFF").disabled = !boss;
   $("onDesc").textContent =
     describe() + (boss ? "" : " · The organiser sets the game.");
+  $("onRules").textContent = RULES[setup.mode];
 
   // The teams, each a box to tap to join it.
   const grid = $("onTeams");

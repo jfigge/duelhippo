@@ -58,9 +58,204 @@ export const BEST_KEY = "duelhippo.best";
 export const SPEEDS = [0.25, 0.5, 0.75, 1];
 export const SPEED_KEY = "duelhippo.speed";
 
+// Inverted pitch (the prototype's I key), remembered between sessions.
+export const INVERT_KEY = "duelhippo.invert";
+
 // Auto-level: let go of the touch stick and the plane eases back to straight
 // and level flight. Not part of the prototype, and keyboard play never uses
 // it. Each axis corrects in proportion to its error (gain, per second),
 // capped at a gentle turn rate (rad/s), then scaled by airspeed authority
 // like every other control input.
 export const LEVEL = { roll: 1, rollMax: 0.6, pitch: 0.8, pitchMax: 0.35 };
+
+// Aim down the sights (Free flight): Shift held, or Caps Lock on. Not part of
+// the prototype. The camera moves onto the gun line and narrows from the
+// scene's 60° to `fov`, easing at `ease` per second. The zoom magnifies every
+// turn by 60/26 ≈ 2.3 on screen, so the controls slow by more than that:
+// pitch, roll and rudder turn at `rate` of their usual speed and the banking
+// turn at `bank` (on screen, about 0.4 and 0.75 as fast), and
+// the stick eases in at `ramp` per second, so a tap nudges the nose instead
+// of jerking it.
+export const ADS = { fov: 26, ease: 12, rate: 0.165, bank: 0.33, ramp: 3 };
+
+// ── Plane types ─────────────────────────────────────────────────────────────
+// Not part of the prototype. Four planes, picked on the home runway while
+// stopped (flight.js pickPlane). The Kite is the prototype's own plane: every
+// number in it is the literal flight.js, weapons.js and DESIGN.md ("Rules &
+// numbers") had, so a Kite game is the prototype's, number for number. The
+// others trade strengths for something to master:
+//
+//   torque   a rotary engine (Free flight): under power the plane rolls and
+//            yaws left (rad/s at full throttle), and the gyroscope makes
+//            turns quicker to the right and slower to the left (`gyro`,
+//            a fraction of the turn rate, scaled by throttle)
+//   snap     snap stalls: a pull harder than `pull` below `v` × stall speed,
+//            held 0.2 s, flicks the plane into a spin. Out takes a push,
+//            idle throttle and (Free flight) opposite rudder or stick, held
+//            together for `spinExit` seconds
+//   landing  `sink` (m/s), `bankLand` (|right.y|) and `along` (|forward.z|,
+//            Free flight) are the touchdown limits
+//   missiles homing missiles (MSL below); the Kite carries none
+//
+// `burn` is fuel per second per unit of (0.12 + throttle); `armour` the
+// damage a round does; `cadence` the gun's interval (s); `muzzle` the speed a
+// round adds to the plane's (m/s); `top` the level speed at full throttle.
+export const PLANES = [
+  {
+    id: "kite",
+    name: "Kite",
+    role: "Forgiving all-rounder",
+    blurb: "The trainer. Lands anywhere, never spins. No missiles.",
+    stall: 32,
+    thr: 24,
+    top: 88,
+    pitch: 1.25,
+    roll: 2.3,
+    yaw: 0.55,
+    bank: 1.05,
+    cpitch: 1.5,
+    sink: 6.5,
+    bankLand: 0.26,
+    along: 0.35,
+    burn: 0.42,
+    ammo: 300,
+    bombs: 6,
+    cadence: 0.075,
+    muzzle: 420,
+    armour: 6,
+    missiles: 0,
+    torque: 0,
+    gyro: 0,
+    snap: null,
+    spinExit: 0,
+  },
+  {
+    id: "hornet",
+    name: "Hornet",
+    role: "Turn fighter",
+    blurb:
+      "Out-turns anything. The rotary pulls it left; pull hard when slow and it spins.",
+    stall: 30,
+    thr: 24,
+    top: 84,
+    pitch: 1.7,
+    roll: 3.3,
+    yaw: 0.8,
+    bank: 1.4,
+    cpitch: 2,
+    sink: 6.5,
+    bankLand: 0.26,
+    along: 0.35,
+    burn: 0.5,
+    ammo: 260,
+    bombs: 2,
+    cadence: 0.06,
+    muzzle: 420,
+    armour: 8,
+    missiles: 2,
+    torque: 0.2,
+    gyro: 0.4,
+    snap: { v: 1.3, pull: 0.6 },
+    spinExit: 0.8,
+  },
+  {
+    id: "lancer",
+    name: "Lancer",
+    role: "Fast interceptor",
+    blurb:
+      "The fastest, with four missiles. Turns wide, stalls high, lands on a knife edge.",
+    stall: 40,
+    thr: 30,
+    top: 108,
+    pitch: 1,
+    roll: 2.6,
+    yaw: 0.5,
+    bank: 0.85,
+    cpitch: 1.25,
+    sink: 4.5,
+    bankLand: 0.15,
+    along: 0.22,
+    burn: 0.55,
+    ammo: 240,
+    bombs: 2,
+    cadence: 0.075,
+    muzzle: 480,
+    armour: 7,
+    missiles: 4,
+    torque: 0,
+    gyro: 0,
+    snap: { v: 1.15, pull: 0.6 },
+    spinExit: 1,
+  },
+  {
+    id: "brute",
+    name: "Brute",
+    role: "Armoured bomber",
+    blurb:
+      "Shrugs off rounds and carries twelve bombs. Slow, heavy, and slow out of a spin.",
+    stall: 36,
+    thr: 20,
+    top: 78,
+    pitch: 0.9,
+    roll: 1.6,
+    yaw: 0.45,
+    bank: 0.8,
+    cpitch: 1.1,
+    sink: 5,
+    bankLand: 0.2,
+    along: 0.3,
+    burn: 0.4,
+    ammo: 400,
+    bombs: 12,
+    cadence: 0.09,
+    muzzle: 400,
+    armour: 4,
+    missiles: 2,
+    torque: 0,
+    gyro: 0,
+    snap: { v: 1.1, pull: 0.9 },
+    spinExit: 1.8,
+  },
+];
+// Drag from the top speed, as DRAG is from 88 m/s: thrust = drag at the top.
+// For the Kite this is DRAG's own expression, so the value is the same.
+for (const p of PLANES) p.drag = p.thr / (p.top * p.top);
+export const PLANE_KEY = "duelhippo.plane";
+
+// A spin (PLANES `snap`): the plane turns about the vertical at `yaw` rad/s
+// with its nose held `nose` rad below the horizon and a wing down by `bank`
+// rad, easing into that attitude at `ease` per second; its stick keeps
+// `authority` of its effect, and the stalled wing holds the speed under
+// `speed` × stall.
+export const SPIN = {
+  yaw: 2.6,
+  nose: 1.05,
+  bank: 0.5,
+  ease: 4,
+  authority: 0.2,
+  speed: 0.8,
+  hold: 0.2,
+};
+
+// Homing missiles (Free flight: they need the sights). Hold the sights on an
+// enemy plane within `cone` (rad) and `range` (m) for `lock` seconds; a gap of
+// more than `grace` s starts the lock again. A missile leaves at the plane's
+// speed + `boost`, climbs to `speed` at `accel`, turns at most `turn` rad/s
+// (less than a plane in a hard turn can, so a break turn can beat it), sees
+// only within `seeker` (rad) of its nose, flies `life` s and goes off within
+// `fuse` m, for `dmg` damage. Service loads one every `rearm` s.
+export const MSL = {
+  lock: 5,
+  cone: 0.0524, // 3°
+  range: 1000,
+  grace: 0.3,
+  boost: 40,
+  speed: 180,
+  accel: 60,
+  turn: 1.2,
+  seeker: 1.05,
+  life: 8,
+  fuse: 8,
+  dmg: 40,
+  rearm: 1.5,
+};

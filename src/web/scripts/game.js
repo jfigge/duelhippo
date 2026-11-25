@@ -27,8 +27,8 @@
 // matters: later steps read what earlier ones wrote this frame.
 
 import * as THREE from "three";
-import { $ } from "./util.js";
-import { BEST_KEY, SPEEDS, SPEED_KEY } from "./constants.js";
+import { $, setLabel } from "./util.js";
+import { BEST_KEY, INVERT_KEY, SPEEDS, SPEED_KEY } from "./constants.js";
 import { scene, camera } from "./scene.js";
 import { S, game, opt } from "./state.js";
 import { sfx } from "./audio.js";
@@ -44,20 +44,33 @@ import {
   buildFields,
   clearFields,
   flagDefs,
-  makePlane,
-  ghostly,
   fields,
 } from "./world.js";
-import { P, resetPlayer, updPlayer, flip } from "./flight.js";
+import {
+  P,
+  resetPlayer,
+  updPlayer,
+  flip,
+  wear,
+  pickPlane,
+  idleAtHome,
+} from "./flight.js";
 import { enemies, spawnEnemy, updEnemy, hostEnemy } from "./ai.js";
 import { bullets, bombs, dropBomb, updBullets, updBombs } from "./weapons.js";
+import {
+  updLock,
+  updMissiles,
+  fireMissile,
+  clearMissiles,
+} from "./missiles.js";
 import { isTouch, releaseKeys, bindInput } from "./input.js";
 import { updCamera } from "./camera.js";
-import { hud, initHud } from "./hud.js";
+import { hud, initHud, showPlane } from "./hud.js";
 import { remotes, clearRemotes, teamScores } from "./remote.js";
 import { net, myTeam, isMode } from "./net/bus.js";
 import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
 import { TEAM, MODES } from "./net/teams.js";
+import { PLANES } from "./constants.js";
 import { initLobby, matchEnded, rematch, leave } from "./net/lobby.js";
 import { initScoreboard, soloOver, renderGroup } from "./scoreboard.js";
 
@@ -98,12 +111,28 @@ function update(dt) {
 
   updBullets(dt);
   updBombs(dt);
+  // Missiles: only the plane types after the Kite carry them, so in a Kite
+  // game these find nothing to do.
+  updLock(dt);
+  updMissiles(dt);
   updTown(dt);
   updHippos(dt);
   updParticles(dt);
 }
 
 // ── Game flow ───────────────────────────────────────────────────────────────
+// Change plane (1–4), and name the new one in the corner for a moment.
+function choosePlane(k) {
+  if (pickPlane(k)) showPlane();
+}
+// The next or previous type (< and >, the picker's arrows, a swipe), round
+// and round. A swipe is `quiet`: it is easily made by accident, so away from
+// the runway it does nothing rather than explain.
+function stepPlane(d, quiet = false) {
+  if (quiet && !idleAtHome()) return;
+  choosePlane((P.kind + d + PLANES.length) % PLANES.length);
+}
+
 export function startGame(m) {
   game.mode = m;
   sfx.init();
@@ -117,7 +146,9 @@ export function startGame(m) {
     lives: isMode("flag") ? 99 : 3,
     rebuildT: 0,
     spawnT: 3,
+    flown: PLANES.map(() => 0),
   });
+  clearMissiles();
   for (const e of enemies) {
     e.alive = false;
     e.obj.visible = false;
@@ -164,6 +195,14 @@ function gameOver() {
   overScreen(false);
   game.state = "over";
   P.obj.visible = false;
+  recordScore();
+  $("over").classList.remove("hidden");
+  $("hud").classList.add("off");
+  $("touchui").classList.add("hidden");
+}
+
+// The flight's score: the best score, the game-over figures and the board.
+function recordScore() {
   if (S.score > S.best) {
     S.best = S.score;
     try {
@@ -175,15 +214,30 @@ function gameOver() {
   $("oScore").textContent = S.score;
   $("oKills").textContent = S.kills;
   $("best").textContent = $("oBest").textContent = S.best;
-  soloOver(S.score, game.mode);
-  $("over").classList.remove("hidden");
-  $("hud").classList.add("off");
-  $("touchui").classList.add("hidden");
+  soloOver(S.score, game.mode, planeOfGame());
+}
+
+// The plane type a one-player game is filed under: the one flown longest, or
+// (never off the ground) the one on the runway.
+function planeOfGame() {
+  const most = Math.max(...S.flown);
+  return most > 0 ? S.flown.indexOf(most) : P.kind;
+}
+
+// Main menu, from the pause menu or the game-over screen. A flight left from
+// the pause menu still counts, as Quit's does; a match is left as Quit
+// leaves it.
+function toMenu() {
+  if (net.on) return leave();
+  setPause(false);
+  if (game.state === "play") recordScore();
+  toTitle();
 }
 
 export function setPause(v) {
   // A match cannot stop for one player: the menu opens over a game that
   // carries on.
+  $("menu").classList.toggle("hidden", net.on);
   if (net.on) {
     $("pTitle").textContent = "Match menu";
     $("pauseFoot").classList.add("hidden");
@@ -201,10 +255,8 @@ export function setPause(v) {
 // The lobby (net/lobby.js) connects everyone and calls startMatch on every
 // machine at once. Team games are all Free flight. The organiser's game
 // speed is the match's; the player's own setting is put back afterwards, as
-// is the player's own plane.
+// are the player's own colours.
 let ownSpeed = null;
-const ownPlane = P.obj;
-const teamPlanes = {};
 
 const INTRO = {
   dogfight: "Take off and shoot the other teams down. Last team flying wins",
@@ -218,25 +270,11 @@ function startMatch({ speed }) {
   setSpeed(speed, false);
   clearRemotes();
   buildFields(net.teams);
-  wearTeam(myTeam());
   P.ghost = false;
+  wear(myTeam());
   startGame("free");
   beginMatch(matchOver, showGroup);
   $("hTeams").classList.remove("hidden");
-}
-
-// The player's plane in the team's colours (or back in its own, -1).
-function wearTeam(team) {
-  const next =
-    team < 0
-      ? ownPlane
-      : (teamPlanes[team] ??= makePlane(...TEAM[team % TEAM.length].plane));
-  if (next !== P.obj) {
-    P.obj.visible = next.visible = false;
-    if (!next.parent) ownPlane.parent.add(next);
-    P.obj = next;
-  }
-  ghostly(P.obj, false);
 }
 
 function matchOver({ result, winner, team }) {
@@ -314,8 +352,9 @@ function toTitle() {
   ownSpeed = null;
   clearRemotes();
   clearFields();
-  wearTeam(-1);
   P.ghost = false;
+  wear(-1);
+  clearMissiles();
   for (const e of enemies) {
     e.alive = false;
     e.obj.visible = false;
@@ -358,8 +397,7 @@ function setSpeed(v, persist = true) {
       // No storage: the setting lasts the session.
     }
   const pct = Math.round(v * 100) + "%";
-  for (const id of ["bSpeed", "bSpeedPause"])
-    $(id).textContent = "SPEED " + pct;
+  for (const id of ["bSpeed", "bSpeedPause"]) setLabel($(id), "Speed", pct);
   $("hSpeed").textContent = pct;
   $("hSpeedRow").classList.toggle("hidden", v === 1);
 }
@@ -379,6 +417,26 @@ function cycleSpeed() {
   if (net.on) return;
   const i = SPEEDS.indexOf(opt.speed);
   setSpeed(i <= 0 ? SPEEDS[SPEEDS.length - 1] : SPEEDS[i - 1]);
+}
+
+// ── Inverted pitch ──────────────────────────────────────────────────────────
+// Each player's own choice, in a match as much as alone: readInput() flips
+// the stick and the arrow keys alike.
+function setInvert(v) {
+  opt.invert = v;
+  try {
+    window.localStorage.setItem(INVERT_KEY, v ? "1" : "0");
+  } catch {
+    // No storage: the setting lasts the session.
+  }
+  for (const id of ["bInvert", "bInvertPause"])
+    setLabel($(id), "Pitch", v ? "inverted" : "normal");
+}
+
+// The I key, in play.
+function toggleInvert() {
+  setInvert(!opt.invert);
+  say(opt.invert ? "Pitch inverted" : "Pitch normal", 1.2);
 }
 
 // Going full screen hides the page for a moment: on macOS the window moves
@@ -412,17 +470,25 @@ function initUI() {
     S.lives = 0;
     gameOver();
   });
+  for (const id of ["menu", "oMenu"]) $(id).addEventListener("click", toMenu);
   $("oAgain").addEventListener("click", rematch);
+  // The runway's plane picker: a card each.
+  // The runway's plane picker: ‹ and › step through the types.
+  $("pPrev").addEventListener("click", () => stepPlane(-1));
+  $("pNext").addEventListener("click", () => stepPlane(1));
   $("oLeave").addEventListener("click", leave);
   initLobby({ startMatch, toTitle, speed: () => opt.speed });
   initScoreboard();
   $("bMute").addEventListener("click", () => {
     sfx.init();
-    $("bMute").textContent = sfx.toggle() ? "SOUND OFF" : "SOUND ON";
+    setLabel($("bMute"), "Sound", sfx.toggle() ? "off" : "on");
   });
   for (const id of ["bSpeed", "bSpeedPause"])
     $(id).addEventListener("click", cycleSpeed);
   setSpeed(opt.speed);
+  for (const id of ["bInvert", "bInvertPause"])
+    $(id).addEventListener("click", () => setInvert(!opt.invert));
+  setInvert(opt.invert);
   $("best").textContent = S.best;
   document.body.classList.toggle("touch", isTouch);
 
@@ -475,7 +541,18 @@ export function boot({ createRenderer }) {
     camera.updateProjectionMatrix();
   });
 
-  bindInput({ startGame, setPause, toggleFull, dropBomb, flip, stepSpeed });
+  bindInput({
+    startGame,
+    setPause,
+    toggleFull,
+    dropBomb,
+    flip,
+    stepSpeed,
+    toggleInvert,
+    pickPlane: choosePlane,
+    stepPlane,
+    fireMissile,
+  });
   initUI();
   initHud();
 
@@ -516,6 +593,7 @@ export function boot({ createRenderer }) {
     net,
     remotes,
     fields,
+    camera,
   };
   return true;
 }

@@ -39,21 +39,21 @@ function setHidden(hidden) {
 }
 
 test("full speed by default, and nothing on the HUD says otherwise", () => {
-  assert.equal($("bSpeed").textContent, "SPEED 100%");
+  assert.equal($("bSpeed").textContent, "Speed 100%");
   assert.ok($("hSpeedRow").classList.contains("hidden"));
 });
 
 test("- and = step the speed through 25–100% and remember it", () => {
   game.press("Minus");
-  assert.equal($("bSpeed").textContent, "SPEED 75%");
-  assert.equal($("bSpeedPause").textContent, "SPEED 75%");
+  assert.equal($("bSpeed").textContent, "Speed 75%");
+  assert.equal($("bSpeedPause").textContent, "Speed 75%");
   assert.equal($("hSpeed").textContent, "75%");
   assert.ok(!$("hSpeedRow").classList.contains("hidden"));
   for (let i = 0; i < 5; i++) game.press("Minus");
-  assert.equal($("bSpeed").textContent, "SPEED 25%", "stops at the slowest");
+  assert.equal($("bSpeed").textContent, "Speed 25%", "stops at the slowest");
   assert.equal(w.localStorage.getItem("duelhippo.speed"), "0.25");
   for (let i = 0; i < 5; i++) game.press("Equal");
-  assert.equal($("bSpeed").textContent, "SPEED 100%", "stops at full speed");
+  assert.equal($("bSpeed").textContent, "Speed 100%", "stops at full speed");
 });
 
 test("the speed button cycles slower, then back to full", () => {
@@ -62,7 +62,7 @@ test("the speed button cycles slower, then back to full", () => {
     $("bSpeed").click();
     seen.push($("bSpeed").textContent);
   }
-  assert.deepEqual(seen, ["SPEED 75%", "SPEED 50%", "SPEED 25%", "SPEED 100%"]);
+  assert.deepEqual(seen, ["Speed 75%", "Speed 50%", "Speed 25%", "Speed 100%"]);
 });
 
 test("half speed: a second of real time is half a second of game", () => {
@@ -105,4 +105,65 @@ test("actually leaving the game does pause it", () => {
   assert.equal(paused(), true);
   $("resume").click();
   assert.equal(paused(), false);
+});
+
+// Inverted pitch: the prototype's I key, plus a button on the title screen and
+// in the pause menu. Port only: the prototype forgot it between sessions.
+test("pitch inverts from the menus or the I key, and is remembered", () => {
+  const climb = () => {
+    game.start("classic");
+    game.down("KeyW");
+    game.run(4000); // airborne
+    const th = duel.P.th;
+    game.down("ArrowDown");
+    game.run(500);
+    game.up("ArrowDown");
+    game.up("KeyW");
+    return duel.P.th - th;
+  };
+  assert.equal($("bInvert").textContent, "Pitch normal");
+  assert.ok(climb() > 0, "↓ pulls up");
+
+  $("bInvert").click();
+  assert.equal($("bInvert").textContent, "Pitch inverted");
+  assert.equal($("bInvertPause").textContent, "Pitch inverted");
+  assert.equal(w.localStorage.getItem("duelhippo.invert"), "1");
+  assert.ok(climb() < 0, "inverted, ↓ pushes down");
+
+  game.press("KeyI"); // in play, from the last climb
+  assert.equal($("bInvert").textContent, "Pitch normal");
+  assert.equal(w.localStorage.getItem("duelhippo.invert"), "0");
+
+  $("bInvertPause").click();
+  assert.equal($("bInvert").textContent, "Pitch inverted");
+  $("bInvertPause").click();
+});
+
+// Main menu: from the pause menu or the game-over screen, back to the title.
+test("Main menu leaves a flight for the title, and the score still counts", () => {
+  const shown = (id) => !$(id).classList.contains("hidden");
+  game.start("classic");
+  game.run(500);
+  duel.S.score = 1234;
+  game.press("KeyP");
+  assert.ok(shown("menu"), "one player: the pause menu offers it");
+  $("menu").click();
+  assert.equal(duel.state, "title");
+  assert.ok(shown("title") && !shown("pause") && !paused());
+  assert.equal($("best").textContent, "1234", "the flight's score counts");
+
+  game.start("free");
+  game.run(500);
+  game.press("KeyP");
+  $("quit").click();
+  assert.equal(duel.state, "over");
+  assert.ok(shown("oMenu"));
+  $("oMenu").click();
+  assert.equal(duel.state, "title");
+  assert.ok(shown("title") && !shown("over"));
+
+  game.start("classic"); // and a new flight starts cleanly from there
+  game.run(500);
+  assert.equal(duel.state, "play");
+  assert.equal(duel.S.lives, 3);
 });

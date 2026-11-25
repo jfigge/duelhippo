@@ -44,7 +44,13 @@
 //                                      that shot it down, if one did
 //   out    {}                          I have no planes left
 //   ef     {o, d, s}                   my flyer fired a round
-//   eh     {i}                         I hit flyer i (its owner decides)
+//   eh     {i, n}                      I hit flyer i, n times (1 if left out;
+//                                      a missile is 3); its owner decides
+//   ms     {o, d, s, to}               I launched a missile: origin,
+//                                      direction, speed, and its target: a
+//                                      seat, or "e" and a flyer's index
+//   lk     {to, on}                    I am (on: 1) or no longer (0) locking
+//                                      on to the plane in seat `to`
 //   ek     {i, by}                     my flyer i is down; by: the seat that
 //                                      gets the kill
 //   fin    {sc}                        my match is over; my final score
@@ -53,12 +59,15 @@
 // h is a player's hash and n their name (scores.js); g is the group board's
 // id, a hash of every player's hash.
 
-export const PROTO = 3;
+import { PLANES } from "../constants.js";
+
+export const PROTO = 4;
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const r4 = (v) => Math.round(v * 10000) / 10000;
 
-// The player's state, in about 150 bytes of JSON (200 with a flyer).
+// The player's state, in about 150 bytes of JSON (200 with a flyer). `pl` is
+// the plane type (constants.js PLANES), so the others draw the right one.
 export function packState(P, S, enemy = null) {
   const m = {
     t: "s",
@@ -72,6 +81,7 @@ export function packState(P, S, enemy = null) {
     sc: S.score,
     k: S.kills,
     l: Math.max(0, Math.min(99, S.lives)),
+    pl: P.kind,
   };
   if (P.ghost) m.gh = 1;
   // Endless enemies: this machine's flyer, [x, y, z, qx, qy, qz, qw].
@@ -107,6 +117,7 @@ export function unpackState(m) {
     kills: num(m.k),
     lives: num(m.l, 3),
     ghost: m.gh === 1,
+    plane: Number.isInteger(m.pl) && PLANES[m.pl] ? m.pl : 0,
     enemy: vec(m.e, 7),
   };
 }

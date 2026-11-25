@@ -25,6 +25,7 @@
 // is built with textContent, never innerHTML.
 
 import { $ } from "./util.js";
+import { PLANES } from "./constants.js";
 import { TEAM } from "./net/teams.js";
 import {
   player,
@@ -37,6 +38,9 @@ import {
 } from "./scores.js";
 
 const MODE = { classic: "Classic", free: "Free" };
+// A row's tag: its mode, and the plane it was flown in (older scores have
+// none).
+const tag = (e) => MODE[e.m] + (PLANES[e.pl] ? " · " + PLANES[e.pl].name : "");
 let backTo = "title"; // the card the board was opened from
 
 function el(tag, cls, text) {
@@ -69,14 +73,12 @@ function showBoard(data) {
     return;
   }
   data.top.forEach((e, i) =>
-    list.append(row(i + 1, e.n, e.sc, MODE[e.m], data.me?.rank === i + 1)),
+    list.append(row(i + 1, e.n, e.sc, tag(e), data.me?.rank === i + 1)),
   );
   // Outside the top ten: the player's own row under a gap.
   if (data.me && data.me.rank > data.top.length) {
     list.append(el("li", "gap", "⋯"));
-    list.append(
-      row(data.me.rank, data.me.n, data.me.sc, MODE[data.me.m], true),
-    );
+    list.append(row(data.me.rank, data.me.n, data.me.sc, tag(data.me), true));
   }
   $("scMsg").textContent = place(data.me, data.total);
 }
@@ -136,14 +138,14 @@ function soloLine(data) {
           : "";
 }
 
-export function soloOver(score, mode) {
+export function soloOver(score, mode, plane = null) {
   $("oSolo").classList.remove("hidden");
   $("oGroup").classList.add("hidden");
   $("oScores").classList.toggle("hidden", !hasBoard());
   if (!hasBoard()) return soloLine(null);
   $("oRank").textContent = "Sending your score…";
   $("oInit").classList.add("hidden");
-  submitSolo(score, mode).then(soloLine, () => soloLine(null));
+  submitSolo(score, mode, plane).then(soloLine, () => soloLine(null));
 }
 
 async function saveInitials(input, then) {

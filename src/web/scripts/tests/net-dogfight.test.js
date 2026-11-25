@@ -24,6 +24,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadPort } from "./harness.js";
+import { PROTO } from "../net/protocol.js";
 import { fakeServer, tick, hash, state } from "./fake-server.js";
 
 const game = await loadPort(11);
@@ -53,9 +54,9 @@ test("friends join: a hello to each, and onto the emptiest team", () => {
   net.server({ t: "peer", seat: 1 });
   const [hi] = net.sent("hi", true);
   assert.deepEqual(hi.to, [1], "addressed to the newcomer");
-  assert.equal(hi.m.v, 3);
+  assert.equal(hi.m.v, PROTO);
   assert.equal(hi.m.n, "Ace");
-  net.from(1, { t: "hi", v: 3, h: hash("b"), n: "Bo" });
+  net.from(1, { t: "hi", v: PROTO, h: hash("b"), n: "Bo" });
   assert.deepEqual(roster(), [
     [0, 0],
     [1, 1],
@@ -65,7 +66,7 @@ test("friends join: a hello to each, and onto the emptiest team", () => {
   $("onLayout").dispatchEvent(new w.Event("change"));
   assert.equal(lastSetup().layout, "2x2");
   net.server({ t: "peer", seat: 2 });
-  net.from(2, { t: "hi", v: 3, h: hash("c"), n: "Cy" });
+  net.from(2, { t: "hi", v: PROTO, h: hash("c"), n: "Cy" });
   assert.deepEqual(roster().at(-1), [2, 0], "a tie goes to the first team");
 });
 
@@ -73,7 +74,7 @@ test("a player may change team, but not into a full one", () => {
   net.from(2, { t: "team", team: 1 });
   assert.deepEqual(roster().at(-1), [2, 1]);
   net.server({ t: "peer", seat: 3 });
-  net.from(3, { t: "hi", v: 3, h: hash("d"), n: "Di" });
+  net.from(3, { t: "hi", v: PROTO, h: hash("d"), n: "Di" });
   assert.deepEqual(roster().at(-1), [3, 0]);
   const before = JSON.stringify(roster());
   net.from(3, { t: "team", team: 1 });
@@ -84,7 +85,7 @@ test("a player may change team, but not into a full one", () => {
 
 test("a different version is told why and left out", () => {
   net.clear();
-  net.from(3, { t: "hi", v: 2, h: hash("d"), n: "Di" });
+  net.from(3, { t: "hi", v: PROTO - 1, h: hash("d"), n: "Di" });
   assert.equal(net.sent("bad", true)[0].to[0], 3);
 });
 
@@ -135,6 +136,42 @@ test("a teammate's rounds pass through; a rival's hurt, and name them", () => {
   net.from(1, { t: "f", o: at(P.pos.x - 40), d: [1, 0, 0], s: 500 });
   game.run(300);
   assert.ok(P.dmg > 0);
+  assert.equal(P.hitBy, 1);
+});
+
+test("each plane is drawn as the type its player flies", () => {
+  net.clear();
+  game.run(100);
+  assert.equal(net.sent("s").at(-1).pl, 0, "ours: the Kite");
+  const r = duel.remotes.get(1),
+    kite = r.obj;
+  net.from(1, state([1400, 120, -1700], { pl: 2 }));
+  assert.equal(r.kind, 2);
+  assert.notEqual(r.obj, kite, "a Lancer now");
+  net.from(1, state([1400, 120, -1700], { pl: 9 }));
+  assert.equal(r.kind, 0, "nonsense reads as the Kite");
+});
+
+test("a lock on us is told; a missile at us is ours to judge", () => {
+  net.from(1, { t: "lk", to: 0, on: 1 });
+  game.run(200);
+  assert.match($("warn").textContent, /LOCKED ON/);
+  net.from(1, { t: "lk", to: 0, on: 0 });
+  game.run(200);
+  assert.doesNotMatch($("warn").textContent, /LOCKED ON/);
+  // A teammate's passes harmlessly; a rival's hits, and names them.
+  const o = [P.pos.x - 80, P.pos.y, P.pos.z];
+  P.dmg = 0;
+  P.hitBy = null;
+  P.thr = 0.15; // not idle, so no repairs to hide a hit
+  net.from(3, { t: "ms", o, d: [1, 0, 0], s: 180, to: 0 });
+  game.run(1500);
+  assert.equal(P.dmg, 0, "friendly fire is off");
+  net.from(1, { t: "ms", o, d: [1, 0, 0], s: 180, to: 0 });
+  game.run(300);
+  assert.match($("warn").textContent, /MISSILE/);
+  game.run(1200);
+  assert.equal(P.dmg, 40);
   assert.equal(P.hitBy, 1);
 });
 

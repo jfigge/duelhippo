@@ -28,7 +28,8 @@
 // One player: a single board for everyone, on the match server (src/server/
 // board.js). Each id has one row, its best, so two players who both chose
 // "ACE" never overwrite each other. A score that cannot be sent (offline, no
-// initials yet) waits in PENDING_KEY and goes with the next attempt.
+// initials yet) waits in PENDING_KEY and goes with the next attempt. Each
+// score names the plane type it was flown in (constants.js PLANES).
 //
 // Team games: boards that live only on the players' devices. Each belongs
 // to one group of players, named by a hash of their ids' hashes, so the same
@@ -51,6 +52,9 @@ export const TOP = 10;
 export const NAME_MAX = 12;
 export const MAX_SCORE = 1_000_000; // as src/server/board.js
 const MODES = ["classic", "free"];
+const PLANE_COUNT = 4; // constants.js PLANES, as src/server/board.js
+const plane = (v) =>
+  Number.isInteger(v) && v >= 0 && v < PLANE_COUNT ? v : null;
 const HEX64 = /^[0-9a-f]{64}$/;
 
 // ── Storage ─────────────────────────────────────────────────────────────────
@@ -189,19 +193,21 @@ export const hasBoard = () => !!boardUrl() && !!player().id;
 
 export const readBoard = () => call("GET");
 
-// A finished one-player game. Sends it (with anything still waiting) if it
-// can, and keeps the best unsent score if it cannot. Resolves to the board,
-// or to {pending: true, reason}.
-export async function submitSolo(sc, m) {
+// A finished one-player game, flown mostly in plane type `pl`. Sends it
+// (with anything still waiting) if it can, and keeps the best unsent score
+// if it cannot. Resolves to the board, or to {pending: true, reason}.
+export async function submitSolo(sc, m, pl = null) {
   const waiting = load(PENDING_KEY, null);
   let best = {
     sc: Math.max(0, Math.floor(sc)),
     m: MODES.includes(m) ? m : "classic",
+    pl: plane(pl),
   };
   if (waiting && Number.isInteger(waiting.sc) && waiting.sc > best.sc)
     best = {
       sc: waiting.sc,
       m: MODES.includes(waiting.m) ? waiting.m : "classic",
+      pl: plane(waiting.pl),
     };
   save(PENDING_KEY, best);
   return flushSolo();
@@ -219,6 +225,7 @@ export async function flushSolo() {
       n: player().n,
       sc: waiting.sc,
       m: waiting.m,
+      ...(plane(waiting.pl) !== null && { pl: waiting.pl }),
     });
     save(PENDING_KEY, null);
     return data;

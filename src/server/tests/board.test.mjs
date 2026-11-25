@@ -107,3 +107,30 @@ test("a tie goes to whoever got there first", () => {
     ["AAA", "BBB"],
   );
 });
+
+test("a score names its plane; an unknown one is dropped, not refused", () => {
+  const ok = { id: id(1), n: "ACE", sc: 100, m: "free" };
+  assert.equal(parseSubmit({ ...ok, pl: 2 }).entry.pl, 2);
+  for (const bad of [4, -1, 1.5, "2", null])
+    assert.equal(parseSubmit({ ...ok, pl: bad }).entry.pl, undefined, bad);
+  const b = fresh();
+  b.submit({ ...ok, pl: 2 }, 1);
+  let r = b.submit({ ...ok, sc: 50, pl: 3 }, 2);
+  assert.deepEqual(r.me, { rank: 1, n: "ACE", sc: 100, m: "free", pl: 2 });
+  r = b.submit({ ...ok, sc: 300, pl: 1 }, 3);
+  assert.equal(r.top[0].pl, 1, "the plane follows the best score");
+});
+
+test("a board from before plane types gains the column, and keeps its rows", () => {
+  const db = new DatabaseSync(":memory:");
+  const query = (sql, ...binds) => db.prepare(sql).all(...binds);
+  query(`CREATE TABLE solo (
+     id TEXT PRIMARY KEY, n TEXT NOT NULL, sc INTEGER NOT NULL,
+     m TEXT NOT NULL, at INTEGER NOT NULL)`);
+  query(`INSERT INTO solo VALUES (?, 'OLD', 700, 'classic', 1)`, id(9));
+  const b = makeBoard(query);
+  assert.deepEqual(b.read().top, [{ n: "OLD", sc: 700, m: "classic" }]);
+  const r = b.submit({ id: id(1), n: "NEW", sc: 900, m: "free", pl: 3 }, 2);
+  assert.deepEqual(r.top[0], { n: "NEW", sc: 900, m: "free", pl: 3 });
+  makeBoard(query); // and opening it again is fine
+});

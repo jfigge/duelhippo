@@ -24,7 +24,14 @@
 // (mode, flow state, pause, camera choice, respawn timer) live on `game`, and
 // the score sheet stays the `S` object it always was.
 
-import { BEST_KEY, SPEEDS, SPEED_KEY } from "./constants.js";
+import {
+  BEST_KEY,
+  INVERT_KEY,
+  PLANES,
+  PLANE_KEY,
+  SPEEDS,
+  SPEED_KEY,
+} from "./constants.js";
 
 export const S = {
   score: 0,
@@ -34,6 +41,9 @@ export const S = {
   rebuildT: 0,
   spawnT: 0,
   best: 0,
+  // Seconds in the air in each plane type (constants.js PLANES) this game:
+  // the one-player board files a score under the plane flown longest.
+  flown: [0, 0, 0, 0],
 };
 try {
   S.best = +window.localStorage.getItem(BEST_KEY) || 0;
@@ -49,13 +59,18 @@ export const game = {
   respawnT: 0,
 };
 
-// Player options. `speed` scales game time (constants.js SPEEDS); it is
-// remembered between sessions, and anything unrecognised in storage reads as
-// full speed.
-export const opt = { invert: false, speed: 1 };
+// Player options. `speed` scales game time (constants.js SPEEDS), `invert`
+// flips pitch and `plane` is the plane type (constants.js PLANES) the player
+// last picked. All are remembered between sessions; anything unrecognised in
+// storage reads as full speed, normal pitch and the Kite.
+export const opt = { invert: false, speed: 1, plane: 0 };
 try {
   const saved = +window.localStorage.getItem(SPEED_KEY);
   if (SPEEDS.includes(saved)) opt.speed = saved;
+  opt.invert = window.localStorage.getItem(INVERT_KEY) === "1";
+  const plane = window.localStorage.getItem(PLANE_KEY);
+  if (plane !== null && PLANES[+plane] && Number.isInteger(+plane))
+    opt.plane = +plane;
 } catch {
-  // No storage: full speed each session.
+  // No storage: full speed, normal pitch and the Kite each session.
 }

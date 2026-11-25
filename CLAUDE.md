@@ -28,7 +28,7 @@ with a seeded `Math.random`. If you change gameplay deliberately, the suite
 will fail. Say so, and agree with the user how to re-baseline it. Do not
 loosen the tolerance to make it pass.
 
-The port adds five things the prototype lacks. None of them changes
+The port adds these things the prototype lacks. None of them changes
 keyboard gameplay at full speed, which is what the equivalence suites run:
 
 - **Game speed.** `opt.speed` scales `dt` in `frame()`, after the 50 ms cap.
@@ -66,6 +66,13 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   - **Tests.** `net-dogfight`, `net-flag` and `net-endless` play matches
     against scripted players (`tests/fake-server.js`), and `server/tests`
     covers the room rules.
+- **Plane types** (`PLANES` in `constants.js`, `missiles.js`): four planes,
+  picked with 1–4 while stopped on the home runway (`pickPlane`). The Kite,
+  index 0 and the default, is the prototype's plane, its numbers the
+  prototype's literals. The others' traits (torque, snap stalls and spins,
+  tighter landings, homing missiles) run only behind a field the Kite has as
+  zero or null. Keep it that way: a Kite game must stay the prototype's.
+  Tested in `planes`, `spin` and `missiles`.
 - **Enemy rounds.** These are drawn pointing the way they fly. In the
   prototype, `fire()` aliased `tv` and aimed the mesh wrongly; only the
   drawing changed.
@@ -92,6 +99,7 @@ Rules that follow from this:
 - `flight`: the player
 - `ai`: the enemies
 - `weapons`: guns and bombs
+- `missiles`: the missile lock, launch and flight
 - `audio`
 - `hud`
 - `msg`: message banner

@@ -25,12 +25,13 @@
 // through the handlers bindInput() is given, so this module needs no import
 // of the modules it drives.
 //
-// Bindings are the prototype's (DESIGN.md, "Input").
+// Bindings are the prototype's (DESIGN.md, "Input"), plus the port's own:
+// the sights (Shift, Caps Lock; AIM on a touch screen), a missile (R; MSL),
+// and < > or 1–4 to change plane on the runway (or its arrows, or a swipe).
 
-import { $, clamp } from "./util.js";
+import { $, clamp, setLabel } from "./util.js";
 import { game, opt } from "./state.js";
 import { sfx } from "./audio.js";
-import { say } from "./msg.js";
 
 export const isTouch =
   window.matchMedia("(pointer:coarse)").matches || "ontouchstart" in window;
@@ -43,12 +44,14 @@ export const touch = {
   thr: null,
   held: false, // a thumb is on the stick, even inside its dead zone
   flying: false, // the stick, not the keyboard, is what's steering
+  aim: false, // the AIM button: down the sights
 };
 
 const PREVENT = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"];
 
 // The game actions presses trigger; set by bindInput():
-// { startGame, setPause, toggleFull, dropBomb, flip, stepSpeed }
+// { startGame, setPause, toggleFull, dropBomb, flip, stepSpeed, toggleInvert,
+//   pickPlane, stepPlane, fireMissile }
 let act = null;
 
 export function releaseKeys() {
@@ -57,7 +60,7 @@ export function releaseKeys() {
 
 function press(code) {
   if (code === "KeyM") {
-    $("bMute").textContent = sfx.toggle() ? "SOUND OFF" : "SOUND ON";
+    setLabel($("bMute"), "Sound", sfx.toggle() ? "off" : "on");
     return;
   }
   if (code === "KeyF") {
@@ -83,11 +86,13 @@ function press(code) {
   }
   if (game.paused) return;
   if (code === "KeyB") act.dropBomb();
+  if (code === "KeyR") act.fireMissile();
+  if (/^Digit[1-4]$/.test(code)) act.pickPlane(+code.slice(5) - 1);
+  // < and > share their keys with , and . so Shift is optional.
+  if (code === "Comma") act.stepPlane(-1);
+  if (code === "Period") act.stepPlane(1);
   if (code === "KeyC") game.camZoom = (game.camZoom + 1) % 2;
-  if (code === "KeyI") {
-    opt.invert = !opt.invert;
-    say(opt.invert ? "Pitch inverted" : "Pitch normal", 1.2);
-  }
+  if (code === "KeyI") act.toggleInvert();
   if (code === "KeyH") $("help").classList.toggle("hidden");
   if (
     game.mode === "classic" &&
@@ -97,6 +102,15 @@ function press(code) {
 }
 
 // The continuous controls for this frame, each in −1…1.
+// Aiming down the sights: Caps Lock latches it, Shift flips it while held.
+// The lock's state is read from every key event rather than counted from its
+// presses, since macOS sends Caps Lock's keydown and keyup on alternate
+// presses.
+let capsLock = false;
+export function sightsUp() {
+  return touch.aim || !!(key.ShiftLeft || key.ShiftRight) !== capsLock;
+}
+
 export function readInput() {
   let pitch = (key.ArrowDown ? 1 : 0) - (key.ArrowUp ? 1 : 0) + touch.pitch;
   if (opt.invert) pitch = -pitch;
@@ -138,12 +152,14 @@ export function bindInput(actions) {
   window.addEventListener("keydown", (e) => {
     // Typing a room code is not flying.
     if (e.target instanceof window.HTMLInputElement) return;
+    capsLock = e.getModifierState("CapsLock");
     if (PREVENT.includes(e.code)) e.preventDefault();
     if (STEER.includes(e.code)) touch.flying = false;
     if (!key[e.code]) press(e.code);
     key[e.code] = true;
   });
   window.addEventListener("keyup", (e) => {
+    capsLock = e.getModifierState("CapsLock");
     key[e.code] = false;
   });
   window.addEventListener("blur", releaseKeys);
@@ -220,9 +236,34 @@ export function bindInput(actions) {
       touch.fire = false;
     });
   $("bBomb").addEventListener("pointerdown", () => act.dropBomb());
+  $("bMsl").addEventListener("pointerdown", () => act.fireMissile());
+  $("bAim").addEventListener("pointerdown", () => {
+    touch.aim = !touch.aim;
+    $("bAim").classList.toggle("on", touch.aim);
+  });
   $("bFlip").addEventListener("pointerdown", () => act.flip());
   $("bCam").addEventListener("click", () => {
     game.camZoom = (game.camZoom + 1) % 2;
   });
   $("bPause").addEventListener("click", () => act.setPause(!game.paused));
+
+  // A sideways swipe across the scene changes plane, as < and > do: left
+  // for the previous, right for the next. Not one that starts on a control.
+  let swipe = null;
+  window.addEventListener("pointerdown", (e) => {
+    swipe =
+      e.pointerType === "touch" &&
+      game.state === "play" &&
+      !e.target.closest?.("button, #stick, #thr")
+        ? { id: e.pointerId, x: e.clientX, y: e.clientY }
+        : null;
+  });
+  window.addEventListener("pointerup", (e) => {
+    if (!swipe || e.pointerId !== swipe.id) return;
+    const dx = e.clientX - swipe.x,
+      dy = e.clientY - swipe.y;
+    swipe = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > 2 * Math.abs(dy))
+      act.stepPlane(dx < 0 ? -1 : 1, true);
+  });
 }

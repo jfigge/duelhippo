@@ -238,7 +238,11 @@ const trees = { crown: null, trunk: null, at: [], hidden: [] };
 }
 
 // ── Plane models and their ground shadows ───────────────────────────────────
-export function makePlane(body, wing, trim, dark) {
+// `kind` is the plane type (constants.js PLANES). Kind 0, the Kite, is the
+// prototype's biplane; the others are drawn by planeKinds below, each with
+// its wheels on the same line, GEAR below the origin.
+export function makePlane(body, wing, trim, dark, kind = 0) {
+  if (kind) return planeKinds[kind](body, wing, trim, dark);
   const g = new THREE.Group(),
     strut = 0x3a2a1a;
   put(g, box(1.4, 1.4, 6.4, body), 0, 0, 0.2);
@@ -269,6 +273,98 @@ export function makePlane(body, wing, trim, dark) {
   g.userData.prop = put(g, box(0.22, 2.8, 0.08, 0x6b4a2a), 0, 0, -4.0);
   return g;
 }
+// The shared parts of the other plane types, laid out as makePlane does.
+const STRUT = 0x3a2a1a;
+function struts(g, xs, h, y, z) {
+  for (const sx of xs) put(g, box(0.12, h, 0.12, STRUT), sx, y, z);
+}
+function wheels(g, r, sx, z) {
+  const wg = new THREE.CylinderGeometry(r, r, 0.3, 10);
+  for (const s of [-sx, sx]) {
+    const w = new THREE.Mesh(wg, M(0x222222));
+    w.rotation.z = PI / 2;
+    put(g, w, s, -1.95 + r, z);
+    put(g, box(0.1, 1.95 - 2 * r + 0.6, 0.1, STRUT), s * 0.7, -1.2 + r, z);
+  }
+}
+function roundels(g, trim, sx, y, z) {
+  const rg = new THREE.CircleGeometry(0.62, 16);
+  for (const s of [-sx, sx]) {
+    const c = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: trim }));
+    c.rotation.x = -PI / 2;
+    put(g, c, s, y, z);
+  }
+}
+function prop(g, len, z) {
+  g.userData.prop = put(g, box(0.22, len, 0.08, 0x6b4a2a), 0, 0, z);
+}
+
+const planeKinds = {
+  // Hornet: a short, stubby biplane round a rotary engine's drum cowl.
+  1(body, wing, trim, dark) {
+    const g = new THREE.Group();
+    put(g, box(1.3, 1.3, 5.2, body), 0, 0, 0.4);
+    const cowl = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.95, 0.95, 1, 12),
+      M(0x8a8a8a),
+    );
+    cowl.rotation.x = PI / 2;
+    put(g, cowl, 0, 0, -2.6);
+    put(g, box(8.2, 0.16, 1.6, wing), 0, 1.45, -1);
+    put(g, box(7.8, 0.16, 1.5, wing), 0, -0.6, -0.8);
+    struts(g, [-2.9, 2.9], 2.05, 0.42, -0.95);
+    struts(g, [-0.55, 0.55], 0.85, 1, -1.2);
+    put(g, box(3.2, 0.12, 1.1, wing), 0, 0.2, 2.7);
+    put(g, box(0.12, 1.3, 1.1, dark), 0, 0.8, 2.85);
+    put(g, box(1.35, 0.3, 1.8, dark), 0, 0.72, 0);
+    wheels(g, 0.48, 0.9, -1.5);
+    put(g, box(0.15, 0.5, 0.15, STRUT), 0, -0.85, 2.9);
+    roundels(g, trim, 3, 1.54, -1);
+    prop(g, 2.6, -3.15);
+    return g;
+  },
+  // Lancer: a long-nosed parasol monoplane, its one wing on struts above.
+  2(body, wing, trim, dark) {
+    const g = new THREE.Group();
+    put(g, box(1.15, 1.2, 7.4, body), 0, 0, 0.3);
+    put(g, box(1.25, 1.25, 1.4, 0x2b2b2b), 0, 0, -3.9);
+    put(g, box(12, 0.18, 2, wing), 0, 2, -0.9);
+    struts(g, [-0.55, 0.55], 1.4, 1.3, -0.9);
+    for (const s of [-1, 1]) {
+      const st = put(g, box(0.1, 3.4, 0.1, STRUT), s * 1.8, 0.7, -0.9);
+      st.rotation.z = -s * (PI / 4);
+    }
+    put(g, box(4, 0.12, 1.2, wing), 0, 0.2, 3.6);
+    put(g, box(0.12, 1.8, 1.3, dark), 0, 1, 3.75);
+    put(g, box(1.2, 0.3, 1.8, dark), 0, 0.7, 0.4);
+    wheels(g, 0.48, 0.95, -1.6);
+    put(g, box(0.15, 0.5, 0.15, STRUT), 0, -0.85, 3.8);
+    roundels(g, trim, 4.2, 2.1, -0.9);
+    prop(g, 2.9, -4.7);
+    return g;
+  },
+  // Brute: a big biplane, two bays of struts a side, twin fins, bomb racks.
+  3(body, wing, trim, dark) {
+    const g = new THREE.Group();
+    put(g, box(1.8, 1.8, 7.6, body), 0, 0, 0.4);
+    put(g, box(2, 2, 1.2, 0x2b2b2b), 0, 0, -3.8);
+    put(g, box(14, 0.18, 2.2, wing), 0, 2.1, -1.2);
+    put(g, box(13, 0.18, 2.1, wing), 0, -0.8, -1);
+    struts(g, [-5.8, -3.2, 3.2, 5.8], 2.85, 0.65, -1.1);
+    struts(g, [-0.7, 0.7], 1.2, 1.5, -1.6);
+    put(g, box(5.2, 0.14, 1.5, wing), 0, 0.3, 3.9);
+    for (const s of [-2.4, 2.4]) put(g, box(0.14, 1.7, 1.4, dark), s, 0.85, 4);
+    put(g, box(1.85, 0.3, 2.6, dark), 0, 0.92, -0.3);
+    for (const s of [-0.45, 0.45])
+      put(g, box(0.4, 0.4, 1.6, 0x2e2e2e), s, -1.15, -0.2);
+    wheels(g, 0.55, 1.15, -1.9);
+    put(g, box(0.15, 0.6, 0.15, STRUT), 0, -1.1, 4);
+    roundels(g, trim, 5, 2.2, -1.2);
+    prop(g, 3.4, -4.45);
+    return g;
+  },
+};
+
 // A player out of planes in Endless enemies flies a see-through ghost.
 export function ghostly(obj, on) {
   obj.traverse((o) => {

@@ -29,10 +29,12 @@
 // rude words, checked here as well as in the game.
 //
 // Ranking is by score, then by who got there first: a later tie does not
-// push an earlier player down.
+// push an earlier player down. A score may name the plane type it was flown
+// in (`pl`, an index into the game's PLANES); older ones do not.
 
 export const TOP = 10;
 export const MODES = ["classic", "free"];
+export const PLANE_COUNT = 4; // the game's constants.js PLANES
 
 // The game makes ids with crypto.randomUUID (or the same shape by hand).
 const ID =
@@ -52,8 +54,10 @@ export function parseInitials(v) {
   return INITIALS.test(s) ? s : null;
 }
 
-// A submission from the game: {id, n, sc, m}. Anything else is refused,
-// with a reason for the developer reading the response.
+// A submission from the game: {id, n, sc, m, pl?}. Anything else is
+// refused, with a reason for the developer reading the response; a plane
+// type the server does not know is dropped rather than refused, so a newer
+// game's score still counts.
 export function parseSubmit(body) {
   if (!body || typeof body !== "object") return { error: "not an object" };
   const id = parseId(body.id);
@@ -65,8 +69,20 @@ export function parseSubmit(body) {
     return { error: "bad score" };
   const m = MODES.includes(body.m) ? body.m : null;
   if (!m) return { error: "bad mode" };
-  return { entry: { id, n, sc, m } };
+  const pl = parsePlane(body.pl);
+  return { entry: { id, n, sc, m, ...(pl !== null && { pl }) } };
 }
+
+const parsePlane = (v) =>
+  Number.isInteger(v) && v >= 0 && v < PLANE_COUNT ? v : null;
+
+// A row as the game sees it: `pl` only when the score has one.
+const shown = (r) => ({
+  n: r.n,
+  sc: Number(r.sc),
+  m: r.m,
+  ...(r.pl !== null && r.pl !== undefined && { pl: Number(r.pl) }),
+});
 
 export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS solo (
@@ -74,17 +90,26 @@ export const SCHEMA = [
      n  TEXT NOT NULL,
      sc INTEGER NOT NULL,
      m  TEXT NOT NULL,
-     at INTEGER NOT NULL
+     at INTEGER NOT NULL,
+     pl INTEGER
    )`,
   `CREATE INDEX IF NOT EXISTS solo_rank ON solo (sc DESC, at ASC)`,
 ];
 
 export function makeBoard(query) {
   for (const sql of SCHEMA) query(sql);
+  // A board made before plane types has no `pl` column: add it, and its old
+  // rows read as having no plane. On any other board the column is there
+  // and SQLite refuses; that refusal is the "already done".
+  try {
+    query(`ALTER TABLE solo ADD COLUMN pl INTEGER`);
+  } catch {
+    // Already has it.
+  }
 
   // Where a player stands: 1 + everyone ahead of them.
   function standing(id) {
-    const [me] = query(`SELECT n, sc, m, at FROM solo WHERE id = ?`, id);
+    const [me] = query(`SELECT n, sc, m, pl, at FROM solo WHERE id = ?`, id);
     if (!me) return null;
     const [{ ahead }] = query(
       `SELECT COUNT(*) AS ahead FROM solo WHERE sc > ? OR (sc = ? AND at < ?)`,
@@ -92,35 +117,37 @@ export function makeBoard(query) {
       me.sc,
       me.at,
     );
-    return { rank: Number(ahead) + 1, n: me.n, sc: Number(me.sc), m: me.m };
+    return { rank: Number(ahead) + 1, ...shown(me) };
   }
 
   // The top ten, the player's own place, and how many are on the board. Ids
   // never leave the server: the game finds its own row by its rank.
   function read(id = null) {
     const top = query(
-      `SELECT n, sc, m FROM solo ORDER BY sc DESC, at ASC LIMIT ?`,
+      `SELECT n, sc, m, pl FROM solo ORDER BY sc DESC, at ASC LIMIT ?`,
       TOP,
-    ).map((r) => ({ n: r.n, sc: Number(r.sc), m: r.m }));
+    ).map(shown);
     const [{ total }] = query(`SELECT COUNT(*) AS total FROM solo`);
     return { top, me: id ? standing(id) : null, total: Number(total) };
   }
 
-  // A game's score. A higher one replaces the player's best (and its mode
-  // and time); a lower one changes nothing but the name, so new initials
-  // show at once.
-  function submit({ id, n, sc, m }, now = Date.now()) {
+  // A game's score. A higher one replaces the player's best (and its mode,
+  // plane and time); a lower one changes nothing but the name, so new
+  // initials show at once.
+  function submit({ id, n, sc, m, pl = null }, now = Date.now()) {
     query(
-      `INSERT INTO solo (id, n, sc, m, at) VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO solo (id, n, sc, m, pl, at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          n  = excluded.n,
          m  = CASE WHEN excluded.sc > solo.sc THEN excluded.m  ELSE solo.m  END,
+         pl = CASE WHEN excluded.sc > solo.sc THEN excluded.pl ELSE solo.pl END,
          at = CASE WHEN excluded.sc > solo.sc THEN excluded.at ELSE solo.at END,
          sc = MAX(solo.sc, excluded.sc)`,
       id,
       n,
       sc,
       m,
+      parsePlane(pl),
       now,
     );
     return read(id);

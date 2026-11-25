@@ -18,16 +18,23 @@
  */
 
 /* VOICE: 1984 shareware cheek, rebuilt in 3D — bright, loud, toy-like
-   IDEA: the CGA Sopwith box — cyan hero, magenta foe, chunky white lettering on a black bezel
+   IDEA: the CGA Sopwith colours — cyan hero, magenta foe — on smooth, rounded smoked-glass cards
    PICTURE: the live 3D sky and patchwork farmland, full bleed, with grazing hippos
-   COLOUR and TYPE: sky #8fd3ff; HUD smoked glass with CGA cyan #55ffff, magenta #ff55ff, white; Press Start 2P titles, VT323 readouts
+   COLOUR and TYPE: sky #8fd3ff; HUD smoked glass with CGA cyan #55ffff, magenta #ff55ff, white; the system sans-serif throughout.
+     DESIGN.md's pixel fonts (Press Start 2P, VT323) were dropped for this smooth look; the colours stay.
    LAYOUT: game fills the screen; title card centred; HUD in corners; touch controls on the bottom edges */
 :root {
   color-scheme: dark;
   --cy: #55ffff;
   --mg: #ff55ff;
-  --yl: #ffff55;
+  --yl: #ffe66b;
+  --ink: #e9ecff;
+  --dim: #9aa3c7;
+  --card: rgba(16, 20, 40, 0.85);
+  --line: rgba(255, 255, 255, 0.16);
   --glass: rgba(6, 8, 18, 0.68);
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sl: env(safe-area-inset-left, 0px);
   --sr: env(safe-area-inset-right, 0px);
   --st: env(safe-area-inset-top, 0px);
@@ -48,11 +55,7 @@ body {
   overflow: hidden;
   background: #000;
   color: #fff;
-  font:
-    20px/1.15 "VT323",
-    ui-monospace,
-    Menlo,
-    monospace;
+  font: 16px/1.4 var(--sans);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -72,8 +75,8 @@ body {
 }
 .glass {
   background: var(--glass);
-  border: 2px solid rgba(255, 255, 255, 0.14);
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
 }
 button {
   font: inherit;
@@ -81,8 +84,22 @@ button {
   cursor: pointer;
 }
 button:focus-visible {
-  outline: 3px solid var(--yl);
-  outline-offset: 2px;
+  outline: 2px solid var(--yl);
+  outline-offset: 3px;
+}
+/* Keycaps, in the key lists and the in-game help. */
+kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 1px 7px;
+  margin-right: 3px;
+  border-radius: 6px;
+  border: 1px solid rgba(85, 255, 255, 0.35);
+  border-bottom-width: 2px;
+  background: rgba(85, 255, 255, 0.07);
+  color: var(--cy);
+  font: 600 12px/1.4 var(--mono);
+  text-align: center;
 }
 
 /* HUD */
@@ -109,14 +126,18 @@ button:focus-visible {
 .row span,
 .bar span {
   color: var(--cy);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }
 .row b {
-  font-weight: 400;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   min-width: 3.2ch;
 }
 .row.big b {
-  font-size: 30px;
+  font-size: 24px;
+  font-weight: 800;
   color: var(--yl);
 }
 .bar {
@@ -128,9 +149,9 @@ button:focus-visible {
 }
 .bar i {
   display: block;
-  height: 9px;
+  height: 8px;
   background: rgba(255, 255, 255, 0.12);
-  border-radius: 2px;
+  border-radius: 999px;
   overflow: hidden;
 }
 .bar u {
@@ -160,7 +181,7 @@ button:focus-visible {
   bottom: calc(12px + var(--sb));
   width: min(560px, 60vw);
   height: 60px;
-  border-radius: 4px;
+  border-radius: 10px;
 }
 body[data-mode="classic"] #radar,
 body[data-mode="free"] #strip {
@@ -173,13 +194,12 @@ body[data-mode="free"] #strip {
   transform: translate(-50%, -8px);
   opacity: 0;
   transition: 0.25s;
-  font:
-    13px/1.6 "Press Start 2P",
-    monospace;
+  font: 600 15px/1.45 var(--sans);
   text-align: center;
-  padding: 8px 14px;
+  padding: 8px 16px;
   background: var(--glass);
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
   max-width: min(560px, 70vw);
   text-wrap: balance;
 }
@@ -193,16 +213,15 @@ body[data-mode="free"] #strip {
   top: calc(70px + var(--st));
   transform: translateX(-50%);
   color: var(--mg);
-  font:
-    13px "Press Start 2P",
-    monospace;
-  text-shadow: 2px 2px 0 #000;
+  font: 800 15px var(--sans);
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
   display: none;
   white-space: nowrap;
 }
 #warn.on {
   display: block;
-  animation: blink 1s steps(2) infinite;
+  animation: blink 1s ease-in-out infinite;
 }
 #svc {
   position: absolute;
@@ -210,11 +229,135 @@ body[data-mode="free"] #strip {
   bottom: calc(90px + var(--sb));
   transform: translateX(-50%);
   color: var(--cy);
-  font:
-    13px "Press Start 2P",
-    monospace;
-  text-shadow: 2px 2px 0 #000;
+  font: 800 15px var(--sans);
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
+}
+/* The plane picker: on the home runway, stopped, ‹ and › either side of
+   its label. The arrows take taps, so it opts back into pointer events the
+   HUD turns off. */
+#planes {
+  position: absolute;
+  left: 50%;
+  bottom: calc(124px + var(--sb));
+  transform: translateX(-50%);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+#planes span {
+  color: var(--cy);
+  font: 700 12px var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
+}
+#planes span i {
+  margin-left: 6px;
+  color: var(--dim);
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0;
+}
+body.touch #planes i.tk {
+  display: inline;
+}
+#planes button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: var(--glass);
+  color: var(--cy);
+  padding: 0 0 4px; /* the chevrons sit low in their line */
+  font: 800 24px/1 var(--sans);
+  cursor: pointer;
+}
+#planes button:hover {
+  border-color: var(--cy);
+}
+/* The plane just picked, for a few seconds (hud.js showPlane): in the top
+   right corner, under the radar in free flight. */
+#planeTag {
+  position: absolute;
+  right: calc(12px + var(--sr));
+  top: calc(12px + var(--st));
+  width: 230px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--glass);
+  border: 1px solid rgba(85, 255, 255, 0.5);
+  box-shadow: 0 0 14px rgba(85, 255, 255, 0.2);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: 0.25s;
+}
+#planeTag.on {
+  opacity: 1;
+  transform: none;
+}
+body[data-mode="free"] #planeTag {
+  top: calc(172px + var(--st));
+}
+body.touch[data-mode="free"] #planeTag {
+  top: calc(138px + var(--st));
+}
+#planeTag b {
+  display: block;
+  color: var(--cy);
+  font: 800 18px/1.2 var(--sans);
+}
+#planeTag span {
+  display: block;
+  color: var(--yl);
+  font: 600 13px/1.4 var(--sans);
+}
+#planeTag small {
+  display: block;
+  margin-top: 4px;
+  color: var(--dim);
+  font: 12.5px/1.4 var(--sans);
+}
+/* The box round the plane the sights are locking: it closes in as the lock
+   builds, and turns solid at LOCK. */
+#lock {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  border: 2px dashed rgba(255, 230, 107, 0.8);
+  border-radius: 6px;
+}
+#lock.on {
+  border-style: solid;
+  border-color: var(--mg);
+  box-shadow: 0 0 12px rgba(255, 85, 255, 0.5);
+}
+#lock span {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  transform: translateX(-50%);
+  color: var(--yl);
+  font: 800 11px var(--sans);
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+#lock.on span {
+  color: var(--mg);
+}
+#hMslRow {
+  margin-left: auto;
+}
+#hMslRow b {
+  color: var(--ink);
+}
+.row b.name {
+  min-width: 0;
 }
 @keyframes blink {
   50% {
@@ -248,24 +391,93 @@ body[data-mode="free"] #strip {
   height: 2px;
   width: 40px;
 }
+/* Down the sights: a ring gunsight in the middle of the screen (the gun
+   line), the edges darkened, in place of the reticle. */
+#sight {
+  position: absolute;
+  inset: 0;
+  display: none;
+  background: radial-gradient(
+    circle at 50% 50%,
+    transparent 28%,
+    rgba(4, 6, 14, 0.55) 75%
+  );
+}
+#hud.ads #sight {
+  display: block;
+}
+#hud.ads #ret {
+  display: none !important;
+}
+#sight i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border: 1.5px solid rgba(85, 255, 255, 0.85);
+  border-radius: 50%;
+  box-shadow:
+    0 0 10px rgba(85, 255, 255, 0.35),
+    inset 0 0 10px rgba(85, 255, 255, 0.2);
+  /* the centre pip */
+  background: radial-gradient(circle, var(--cy) 0 2.5px, transparent 3px);
+}
+/* Cross hairs with a gap round the pip, out through the ring. */
+#sight i::before,
+#sight i::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: linear-gradient(var(--cy), var(--cy)) 0 0 / 100% 100% no-repeat;
+}
+#sight i::before {
+  width: 168px;
+  height: 1.5px;
+  margin: -0.75px 0 0 -84px;
+  -webkit-mask: linear-gradient(
+    90deg,
+    #000 0 40%,
+    transparent 40% 60%,
+    #000 60%
+  );
+  mask: linear-gradient(90deg, #000 0 40%, transparent 40% 60%, #000 60%);
+}
+#sight i::after {
+  width: 1.5px;
+  height: 168px;
+  margin: -84px 0 0 -0.75px;
+  -webkit-mask: linear-gradient(#000 0 40%, transparent 40% 60%, #000 60%);
+  mask: linear-gradient(#000 0 40%, transparent 40% 60%, #000 60%);
+}
+#sight span {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 92px);
+  transform: translateX(-50%);
+  color: var(--cy);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+}
 #help {
   position: absolute;
   right: calc(12px + var(--sr));
   bottom: calc(12px + var(--sb));
   padding: 10px 14px;
-  font-size: 18px;
-  line-height: 1.3;
-}
-#help b {
-  color: var(--cy);
-  font-weight: 400;
+  font-size: 13px;
+  line-height: 2;
 }
 .hint {
   position: absolute;
   right: calc(14px + var(--sr));
   bottom: calc(10px + var(--sb));
   color: rgba(255, 255, 255, 0.7);
-  font-size: 17px;
+  font-size: 13px;
 }
 body.touch .hint,
 body.touch #help {
@@ -323,14 +535,15 @@ body.touch #help {
   position: absolute;
   inset: auto 0 6px;
   text-align: center;
-  font-size: 17px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 .tbtn {
   border-radius: 50%;
-  border: 3px solid #fff;
-  font:
-    13px "Press Start 2P",
-    monospace;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  font: 800 13px var(--sans);
+  letter-spacing: 0.06em;
   touch-action: none;
 }
 #bFire {
@@ -357,17 +570,43 @@ body.touch #help {
 body[data-mode="free"] #bFlip {
   display: none;
 }
+/* Free flight only: AIM takes FLIP's place, and MSL shows above it while a
+   lock is made. */
+#bAim,
+#bMsl {
+  right: calc(206px + var(--sr));
+  width: 68px;
+  height: 68px;
+}
+#bAim {
+  bottom: calc(36px + var(--sb));
+  background: rgba(6, 8, 18, 0.55);
+}
+#bAim.on {
+  background: rgba(85, 255, 255, 0.45);
+}
+#bMsl {
+  bottom: calc(116px + var(--sb));
+  background: rgba(255, 85, 255, 0.6);
+  display: none;
+}
+#bMsl.on {
+  display: block;
+}
+body[data-mode="classic"] #bAim,
+body[data-mode="classic"] #bMsl {
+  display: none;
+}
 .mini {
   top: calc(50% - 50px);
   right: calc(14px + var(--sr));
   width: 58px;
   height: 44px;
-  border-radius: 6px;
-  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
   background: var(--glass);
-  font:
-    11px "Press Start 2P",
-    monospace;
+  font: 800 12px var(--sans);
+  letter-spacing: 0.06em;
 }
 #bPause {
   top: calc(50% + 4px);
@@ -394,7 +633,7 @@ body[data-mode="free"] #bFlip {
 }
 body.touch #card {
   width: 200px;
-  font-size: 17px;
+  font-size: 14px;
   padding: 6px 10px;
 }
 body.touch #strip {
@@ -410,7 +649,7 @@ body.touch #radar {
 body.touch #msg {
   top: auto;
   bottom: calc(210px + var(--sb));
-  font-size: 11px;
+  font-size: 13px;
 }
 
 /* overlays */
@@ -429,25 +668,27 @@ body.touch #msg {
   overflow: auto;
 }
 .box {
-  background: #05060c;
-  border: 4px solid var(--cy);
+  background: rgba(8, 10, 22, 0.92);
+  color: var(--ink);
   box-shadow:
-    0 0 0 4px #05060c,
-    0 0 0 8px var(--mg),
-    0 20px 60px rgba(0, 0, 0, 0.6);
+    0 0 0 1.5px rgba(85, 255, 255, 0.55),
+    0 0 0 5px rgba(255, 85, 255, 0.18),
+    0 24px 60px rgba(0, 0, 0, 0.45),
+    0 0 40px rgba(85, 255, 255, 0.12);
   padding: clamp(18px, 3vw, 30px);
   max-width: 600px;
   width: 100%;
-  border-radius: 2px;
+  border-radius: 22px;
 }
 .head {
   display: flex;
-  gap: 18px;
+  gap: 20px;
   align-items: center;
 }
 #mascot {
   flex: none;
-  width: clamp(64px, 12vw, 96px);
+  width: clamp(64px, 12vw, 92px);
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
 }
 #mascot svg {
   display: block;
@@ -455,28 +696,31 @@ body.touch #msg {
 }
 h1 {
   margin: 0;
-  font:
-    400 clamp(26px, 5.5vw, 44px)/1.15 "Press Start 2P",
-    monospace;
-  color: var(--cy);
-  text-shadow: 4px 4px 0 var(--mg);
+  font: 900 clamp(34px, 8vw, 50px)/0.95 var(--sans);
+  letter-spacing: -0.01em;
+}
+h1 span {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--cy), #8fb7ff 55%, var(--mg));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgba(85, 255, 255, 0.35));
 }
 h1 em {
   font-style: normal;
   color: #fff;
-  text-shadow: 4px 4px 0 var(--cy);
+  text-shadow: 0 0 18px rgba(255, 85, 255, 0.45);
 }
 h2 {
-  margin: 0 0 10px;
-  font:
-    400 18px/1.4 "Press Start 2P",
-    monospace;
+  margin: 0 0 12px;
+  font: 800 22px/1.3 var(--sans);
   color: var(--mg);
 }
 .box p {
-  margin: 12px 0;
-  font-size: 21px;
-  line-height: 1.25;
+  margin: 14px 0;
+  font-size: 17px;
+  line-height: 1.45;
   max-width: 60ch;
 }
 .modes {
@@ -485,37 +729,39 @@ h2 {
   gap: 12px;
   margin: 16px 0 8px;
 }
+/* Each card wears its accent (--c) on its border, glow and heading. */
 .mode {
-  padding: 14px 14px 12px;
+  --c: var(--cy);
+  padding: 14px 16px 15px;
   text-align: left;
-  background: #0d1020;
-  border: 3px solid var(--cy);
-  border-radius: 2px;
+  background: var(--card);
+  border: 1.5px solid var(--c);
+  border-radius: 14px;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--c) 18%, transparent);
   min-height: 44px;
 }
 .mode:hover {
-  background: #13203a;
+  background: rgba(26, 32, 62, 0.92);
 }
 .mode b {
   display: block;
-  font:
-    400 13px/1.4 "Press Start 2P",
-    monospace;
-  color: var(--yl);
-  margin-bottom: 6px;
+  font: 700 17px/1.3 var(--sans);
+  color: var(--c);
+  margin-bottom: 4px;
 }
 .mode.free {
-  border-color: var(--mg);
+  --c: var(--mg);
 }
 .mode span {
-  font-size: 19px;
-  line-height: 1.2;
-  color: #dfe6ff;
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: #c9d0ee;
 }
-/* Two player: the title button spans both columns. */
-.mode.online {
+/* Team game on the title, Main menu elsewhere: a third card, full width. */
+.mode.online,
+.mode.wide {
+  --c: var(--yl);
   grid-column: 1 / -1;
-  border-color: var(--yl);
 }
 .pick {
   display: flex;
@@ -525,26 +771,29 @@ h2 {
 .pick button {
   flex: 1;
   min-height: 44px;
-  background: #0d1020;
-  border: 3px solid #556;
-  font:
-    400 12px/1.4 "Press Start 2P",
-    monospace;
-  color: #dfe6ff;
+  background: var(--card);
+  border: 1.5px solid #3a4060;
+  border-radius: 12px;
+  font: 700 14px/1.3 var(--sans);
+  color: var(--ink);
 }
 .pick button.on {
   border-color: var(--yl);
   color: var(--yl);
+  box-shadow: 0 0 14px rgba(255, 230, 107, 0.18);
+}
+.pick button i {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--dim);
 }
 .box p.pickNote {
-  font-size: 18px;
-  color: #aab;
-  margin: 4px 0 8px;
+  font-size: 14px;
+  color: var(--dim);
+  margin: 6px 0 8px;
 }
 .code {
-  font:
-    400 clamp(36px, 9vw, 64px)/1.2 "Press Start 2P",
-    monospace;
+  font: 800 clamp(40px, 10vw, 68px)/1.2 var(--mono);
   color: var(--yl);
   text-align: center;
   letter-spacing: 0.2em;
@@ -555,13 +804,12 @@ h2 {
   width: 100%;
   margin: 14px 0 4px;
   padding: 10px;
-  background: #0d1020;
-  border: 3px solid var(--cy);
+  background: var(--card);
+  border: 1.5px solid var(--cy);
+  border-radius: 12px;
   color: var(--yl);
   text-align: center;
-  font:
-    400 32px/1.2 "Press Start 2P",
-    monospace;
+  font: 700 30px/1.2 var(--mono);
   letter-spacing: 0.3em;
   text-transform: uppercase;
 }
@@ -577,14 +825,21 @@ h2 {
 .keys {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 14px;
-  font-size: 19px;
-  margin-top: 12px;
+  gap: 9px 16px;
+  align-items: baseline;
+  font-size: 14.5px;
+  color: #d4daf5;
+  margin-top: 22px;
 }
 .keys b {
   color: var(--cy);
-  font-weight: 400;
+  font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
+}
+.keys i {
+  font-style: normal;
+  color: var(--dim);
 }
 .tk {
   display: none;
@@ -600,34 +855,65 @@ body.touch .tk {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-top: 14px;
-  color: #aab;
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--dim);
 }
 .foot b {
   color: var(--yl);
-  font-weight: 400;
+  font-weight: 700;
+}
+#titleBody .foot {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.foot .best {
+  white-space: nowrap;
+}
+.foot .best b {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 .foot .btns {
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .ghost {
-  background: none;
-  border: 2px solid #556;
-  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  padding: 0 14px;
   min-height: 44px;
-  border-radius: 2px;
+  border-radius: 999px;
+  color: var(--ink);
+  font: 600 13px/1 var(--sans);
+  white-space: nowrap;
+}
+.ghost:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.ghost i {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--dim);
 }
 .stats {
   display: flex;
   gap: 28px;
-  font-size: 24px;
+  font-size: 15px;
+  color: var(--dim);
   margin: 8px 0 4px;
 }
 .stats b {
   color: var(--yl);
-  font-weight: 400;
-  font-size: 34px;
+  font-weight: 800;
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
   display: block;
 }
 .rot {
@@ -663,7 +949,7 @@ body.touch .tk {
   }
   .box p {
     margin: 6px 0;
-    font-size: 18px;
+    font-size: 15px;
   }
   .keys,
   #titleBody > p:not(.rot) {
@@ -673,15 +959,13 @@ body.touch .tk {
     width: 52px;
   }
   h1 {
-    font-size: 26px;
-    text-shadow: 3px 3px 0 var(--mg);
+    font-size: 30px;
   }
   h1 br {
     display: none;
   }
   h1 em {
-    margin-left: 0.4em;
-    text-shadow: 3px 3px 0 var(--cy);
+    margin-left: 0.3em;
   }
   h2 {
     margin-bottom: 6px;
@@ -705,16 +989,19 @@ body.touch .tk {
     justify-content: flex-start;
   }
   .mode span {
-    font-size: 17px;
+    font-size: 13.5px;
   }
-  .foot {
+  .foot,
+  #titleBody .foot {
     margin-top: 8px;
+    padding-top: 0;
+    border-top: 0;
   }
   .pick {
     margin: 6px 0 4px;
   }
   .box p.pickNote {
-    font-size: 16px;
+    font-size: 13px;
     margin: 2px 0 4px;
   }
   .code,
@@ -736,26 +1023,28 @@ body.touch .tk {
   list-style: none;
   margin: 8px 0;
   padding: 0;
-  font-size: 21px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
 }
 .board li {
   display: grid;
   grid-template-columns: 3ch minmax(0, 1fr) auto 7ch;
   gap: 12px;
   align-items: baseline;
-  padding: 2px 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
 }
 .board li.mine {
-  background: #13203a;
-  outline: 2px solid var(--yl);
+  background: rgba(255, 230, 107, 0.08);
+  outline: 1.5px solid var(--yl);
 }
 .board li.gap {
   display: block;
   text-align: center;
-  color: #556;
+  color: #5a6080;
 }
 .board .rk {
-  color: #aab;
+  color: var(--dim);
   text-align: right;
 }
 .board .nm {
@@ -765,24 +1054,22 @@ body.touch .tk {
 }
 .board b {
   color: var(--yl);
-  font-weight: 400;
+  font-weight: 700;
   text-align: right;
 }
 .board i {
   font-style: normal;
   color: var(--cy);
-  font-size: 17px;
+  font-size: 13px;
 }
 .group h3 {
-  margin: 14px 0 4px;
-  font:
-    400 12px/1.4 "Press Start 2P",
-    monospace;
+  margin: 16px 0 4px;
+  font: 700 14px/1.4 var(--sans);
   color: var(--cy);
 }
 .group p.none {
-  font-size: 18px;
-  color: #aab;
+  font-size: 14px;
+  color: var(--dim);
   margin: 4px 0;
 }
 .initials {
@@ -793,13 +1080,15 @@ body.touch .tk {
 }
 .initials input,
 .callsign input {
-  padding: 8px 10px;
-  background: #0d1020;
-  border: 3px solid var(--cy);
+  padding: 9px 12px;
+  background: var(--card);
+  border: 1.5px solid var(--cy);
+  border-radius: 10px;
   color: var(--yl);
-  font:
-    400 20px/1.2 "Press Start 2P",
-    monospace;
+  font: 700 18px/1.2 var(--sans);
+}
+.initials input {
+  font-family: var(--mono);
 }
 .initials input {
   width: 6.5ch;
@@ -811,7 +1100,7 @@ body.touch .tk {
   gap: 12px;
   align-items: center;
   margin: 6px 0 4px;
-  font-size: 21px;
+  font-size: 16px;
 }
 .callsign input {
   flex: 1;
@@ -822,13 +1111,12 @@ body.touch .tk {
 #onLayout {
   flex: 1;
   min-height: 44px;
-  background: #0d1020;
-  border: 3px solid #556;
-  color: #dfe6ff;
-  font:
-    400 12px/1.4 "Press Start 2P",
-    monospace;
-  padding: 0 8px;
+  background: var(--card);
+  border: 1.5px solid #3a4060;
+  border-radius: 12px;
+  color: var(--ink);
+  font: 700 14px/1.3 var(--sans);
+  padding: 0 10px;
 }
 #onFF.on {
   border-color: var(--mg);
@@ -845,24 +1133,23 @@ body.touch .tk {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: 8px 10px;
-  background: #0d1020;
-  border: 3px solid;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1.5px solid;
+  border-radius: 12px;
   text-align: left;
   min-height: 44px;
 }
 .teamgrid .team b {
-  font:
-    400 11px/1.4 "Press Start 2P",
-    monospace;
+  font: 700 14px/1.3 var(--sans);
   margin-bottom: 4px;
 }
 .teamgrid .team span {
-  font-size: 19px;
-  color: #dfe6ff;
+  font-size: 15px;
+  color: var(--ink);
 }
 .teamgrid .team span.free {
-  color: #556;
+  color: #5a6080;
 }
 .teamgrid .team span.boss::after {
   content: " ★";
@@ -873,6 +1160,7 @@ body.touch .tk {
 }
 #hTeams .row.mine {
   outline: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
 }
 .board.team li {
   grid-template-columns: 3ch minmax(0, 1fr) auto;

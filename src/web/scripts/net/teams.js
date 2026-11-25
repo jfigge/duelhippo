@@ -49,6 +49,15 @@ export const MODES = {
   endless: "Endless enemies",
 };
 
+// The rules of each mode in a sentence or two, shown in the lobby under the
+// mode picker. net/match.js has the full version.
+export const RULES = {
+  dogfight: "Three planes each. The last team flying wins.",
+  flag: "Planes without end while your flag stands. Bomb the other flags; the last flag standing wins.",
+  endless:
+    "Shoot down the magenta flyers; the team with the most wins. Out of planes, you fly on as a ghost and bomb the town.",
+};
+
 // Each team's plane colours, as makePlane takes them (body, wing, trim,
 // dark), and the colour the HUD and lobby use. Team 0 wears the one-player
 // plane's cyan. None is the enemy's magenta.

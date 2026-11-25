@@ -24,8 +24,9 @@
 // last few updates of each and draws every plane a little in the past,
 // between two of them, so it moves smoothly however the updates arrive.
 // Past the newest update a plane carries on along its nose for a moment,
-// then waits. Planes wear their team's colours (net/teams.js); a player out
-// of planes in Endless enemies flies on as a see-through ghost.
+// then waits. Planes wear their team's colours (net/teams.js) and are drawn
+// as the plane type their player flies; a player out of planes in Endless
+// enemies flies on as a see-through ghost.
 
 import { V, Q } from "./util.js";
 import { scene } from "./scene.js";
@@ -41,14 +42,20 @@ const EXTRAPOLATE_MS = 250;
 
 export const remotes = new Map(); // seat → remote
 
-export function addRemote(seat, team) {
-  dropRemote(seat);
-  const obj = makePlane(...TEAM[team % TEAM.length].plane);
+const planeFor = (team, kind) => {
+  const obj = makePlane(...TEAM[team % TEAM.length].plane, kind);
   obj.visible = false;
   scene.add(obj);
+  return obj;
+};
+
+export function addRemote(seat, team) {
+  dropRemote(seat);
+  const obj = planeFor(team, 0);
   const r = {
     seat,
     team,
+    kind: 0,
     pos: new V(),
     q: new Q(),
     vel: new V(),
@@ -96,6 +103,16 @@ export function pushState(seat, s, at) {
   r.score = s.score;
   r.kills = s.kills;
   r.lives = s.lives;
+  if (s.plane !== r.kind) {
+    // They changed plane on their runway.
+    const obj = planeFor(r.team, (r.kind = s.plane));
+    obj.visible = r.obj.visible;
+    obj.position.copy(r.obj.position);
+    obj.quaternion.copy(r.obj.quaternion);
+    scene.remove(r.obj);
+    r.obj = obj;
+    ghostly(r.obj, r.ghost);
+  }
   if (s.ghost !== r.ghost) ghostly(r.obj, (r.ghost = s.ghost));
   if (!s.alive) return;
   r.buf.push({

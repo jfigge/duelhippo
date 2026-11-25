@@ -28,6 +28,8 @@
     <div id="view"></div>
 
     <div id="hud" class="off">
+      <!-- First, so its darkened edges lie under the rest of the HUD. -->
+      <div id="sight"><i></i><span>Sights</span></div>
       <div id="card" class="glass">
         <div class="row big"><span>SCORE</span><b id="hScore">0</b></div>
         <div class="row">
@@ -50,6 +52,10 @@
           <span>AMMO</span><b id="hAmmo">300</b><span>BOMBS</span
           ><b id="hBombs">6</b>
         </div>
+        <div class="row">
+          <span>PLANE</span><b id="hPlane" class="name">Kite</b
+          ><span id="hMslRow" class="hidden">MSL <b id="hMsl">0</b></span>
+        </div>
         <div class="teams hidden" id="hTeams"></div>
         <div class="row hidden" id="hSpeedRow">
           <span>SPEED</span><b id="hSpeed">100%</b>
@@ -60,15 +66,30 @@
       <div id="msg"></div>
       <div id="warn"></div>
       <div id="svc" class="hidden"></div>
+      <div id="planes" class="hidden">
+        <button id="pPrev" aria-label="Previous plane">‹</button
+        ><span
+          >Change plane <i class="kk"><kbd>&lt;</kbd><kbd>&gt;</kbd></i
+          ><i class="tk">swipe</i></span
+        ><button id="pNext" aria-label="Next plane">›</button>
+      </div>
+      <div id="planeTag"><b></b><span></span><small></small></div>
       <div id="ret"></div>
+      <div id="lock"><span></span></div>
       <div id="help" class="glass hidden">
-        <b>W/S</b> throttle · <b>↓/↑</b> pull up / push down<br />
-        <b>Space</b> guns · <b>B</b> bomb · <b>C</b> camera<br />
-        Classic: <b>←/→</b> flip · Free: <b>←/→</b> roll,
-        <b>A/D</b> rudder<br />
-        <b>I</b> invert · <b>M</b> sound · <b>F</b> fullscreen ·
-        <b>P</b> pause<br />
-        <b>-/=</b> game speed (one player only)
+        <kbd>W</kbd><kbd>S</kbd> throttle · <kbd>↓</kbd><kbd>↑</kbd> pull up /
+        push down<br />
+        <kbd>Space</kbd> guns · <kbd>B</kbd> bomb · <kbd>C</kbd> camera<br />
+        <kbd>&lt;</kbd><kbd>&gt;</kbd> or <kbd>1</kbd>–<kbd>4</kbd> change
+        plane, stopped on your runway<br />
+        Classic: <kbd>←</kbd><kbd>→</kbd> flip · Free: <kbd>←</kbd
+        ><kbd>→</kbd> roll, <kbd>A</kbd><kbd>D</kbd> rudder<br />
+        Free: <kbd>Shift</kbd> hold or <kbd>Caps Lock</kbd> on: aim down the
+        sights<br />
+        Free: hold the sights on a plane 5 s to lock, <kbd>R</kbd> missile<br />
+        <kbd>I</kbd> invert · <kbd>M</kbd> sound · <kbd>F</kbd> fullscreen ·
+        <kbd>P</kbd> pause<br />
+        <kbd>-</kbd><kbd>=</kbd> game speed (one player only)
       </div>
       <div class="hint">H controls · P pause</div>
     </div>
@@ -82,6 +103,8 @@
       <button id="bFire" class="tbtn">FIRE</button>
       <button id="bBomb" class="tbtn">BOMB</button>
       <button id="bFlip" class="tbtn">FLIP</button>
+      <button id="bAim" class="tbtn">AIM</button>
+      <button id="bMsl" class="tbtn">MSL</button>
       <button id="bCam" class="mini">CAM</button>
       <button id="bPause" class="mini">II</button>
     </div>
@@ -90,7 +113,7 @@
       <div class="box" id="titleBody">
         <div class="head">
           <div id="mascot"></div>
-          <h1>DUEL<br /><em>HIPPO</em></h1>
+          <h1><span>DUEL</span><br /><em>HIPPO</em></h1>
         </div>
         <p>
           Take off, shoot down the magenta flyers and bomb their town. Then get
@@ -114,10 +137,28 @@
           </button>
         </div>
         <div class="keys kk">
-          <b>W / S</b><span>Throttle up / down</span> <b>↓ / ↑</b
-          ><span>Pull up / push down (I to invert)</span> <b>Space · B</b
-          ><span>Guns · drop a bomb</span> <b>← / →</b
-          ><span>Classic: flip over · Free: roll (A/D rudder)</span> <b>- / =</b
+          <b><kbd>W</kbd><kbd>S</kbd></b
+          ><span>Throttle up / down</span> <b><kbd>↓</kbd><kbd>↑</kbd></b
+          ><span>Pull up / push down <i>(I to invert)</i></span>
+          <b><kbd>Space</kbd><kbd>B</kbd></b
+          ><span>Guns · drop a bomb</span> <b><kbd>←</kbd><kbd>→</kbd></b
+          ><span>Classic: flip over · Free: roll <i>(A/D rudder)</i></span>
+          <b><kbd>Shift</kbd><kbd>Caps</kbd></b
+          ><span
+            >Free: aim down the sights, for finer turns
+            <i>(hold Shift, or Caps Lock on)</i></span
+          >
+          <b><kbd>&lt;</kbd><kbd>&gt;</kbd></b
+          ><span
+            >Change plane, stopped on your runway <i>(or 1–4)</i>. Each flies
+            differently</span
+          >
+          <b><kbd>R</kbd></b
+          ><span
+            >Free: missile, once the sights have held a plane for 5 s
+            <i>(not on the Kite)</i></span
+          >
+          <b><kbd>-</kbd><kbd>=</kbd></b
           ><span>Game speed: slower / faster</span> <b>Landing</b
           ><span
             >Line up with the cyan runway, wings level, sink gently, then roll
@@ -131,7 +172,10 @@
             to level out</span
           >
           <b>Slider</b><span>Throttle</span> <b>Buttons</b
-          ><span>FIRE · BOMB · FLIP</span> <b>Landing</b
+          ><span>FIRE · BOMB · FLIP · AIM, then MSL once locked</span>
+          <b>Planes</b
+          ><span>Stopped on your runway, swipe or tap ‹ › to change</span>
+          <b>Landing</b
           ><span
             >Line up with the cyan runway, wings level, sink gently, then roll
             to a stop to refuel</span
@@ -139,11 +183,12 @@
         </div>
         <p class="rot">Turn your phone sideways for the best view.</p>
         <div class="foot">
-          <span>Best score <b id="best">0</b></span>
+          <span class="best">Best score <b id="best">0</b></span>
           <span class="btns"
-            ><button id="bScores" class="ghost">SCORES</button
-            ><button id="bSpeed" class="ghost">SPEED 100%</button
-            ><button id="bMute" class="ghost">SOUND ON</button></span
+            ><button id="bScores" class="ghost">Scores</button
+            ><button id="bInvert" class="ghost"><i>Pitch</i> normal</button
+            ><button id="bSpeed" class="ghost"><i>Speed</i> 100%</button
+            ><button id="bMute" class="ghost"><i>Sound</i> on</button></span
           >
         </div>
       </div>
@@ -160,7 +205,7 @@
         <div id="oSolo" class="hidden">
           <div class="foot">
             <span id="oRank"></span>
-            <button id="oScores" class="ghost">SCORES</button>
+            <button id="oScores" class="ghost">Scores</button>
           </div>
           <div id="oInit" class="initials hidden">
             <input
@@ -171,15 +216,15 @@
               spellcheck="false"
               placeholder="AAA"
               aria-label="Your initials"
-            /><button id="oInitSave" class="ghost">SAVE</button>
+            /><button id="oInitSave" class="ghost">Save</button>
           </div>
         </div>
         <div id="oGroup" class="group hidden"></div>
         <div class="foot hidden" id="overMp">
           <span id="oNote"></span>
           <span class="btns"
-            ><button id="oAgain" class="ghost">PLAY AGAIN</button
-            ><button id="oLeave" class="ghost">LEAVE</button></span
+            ><button id="oAgain" class="ghost">Play again</button
+            ><button id="oLeave" class="ghost">Leave</button></span
           >
         </div>
         <div class="modes" id="overModes">
@@ -188,6 +233,9 @@
           </button>
           <button class="mode free" data-start="free">
             <b>Free flight</b><span>Fly again in full 3D.</span>
+          </button>
+          <button class="mode wide" id="oMenu">
+            <b>Main menu</b><span>Back to the start.</span>
           </button>
         </div>
       </div>
@@ -207,11 +255,11 @@
             spellcheck="false"
             placeholder="AAA"
             aria-label="Your initials"
-          /><button id="scSave" class="ghost">SAVE INITIALS</button>
+          /><button id="scSave" class="ghost">Save initials</button>
         </div>
         <div class="foot">
           <span>Three letters, A to Z. One-player games.</span>
-          <button id="scBack" class="ghost">BACK</button>
+          <button id="scBack" class="ghost">Back</button>
         </div>
       </div>
     </section>
@@ -226,10 +274,18 @@
           <button class="mode free" id="quit">
             <b>Quit</b><span>End this flight.</span>
           </button>
+          <button class="mode wide" id="menu">
+            <b>Main menu</b
+            ><span>End this flight and go back to the start.</span>
+          </button>
+        </div>
+        <div class="foot">
+          <span>Flip up and down on the stick and arrow keys.</span>
+          <button id="bInvertPause" class="ghost"><i>Pitch</i> normal</button>
         </div>
         <div class="foot" id="pauseFoot">
           <span>Slow the game down while you learn to fly.</span>
-          <button id="bSpeedPause" class="ghost">SPEED 100%</button>
+          <button id="bSpeedPause" class="ghost"><i>Speed</i> 100%</button>
         </div>
       </div>
     </section>
@@ -268,38 +324,34 @@
             aria-label="Room code"
           />
           <div class="foot">
-            <span></span><button id="onGo" class="ghost">JOIN</button>
+            <span></span><button id="onGo" class="ghost">Join</button>
           </div>
         </div>
         <div id="onRoom" class="hidden">
           <div id="onCodeShow" class="code"></div>
           <div class="pick">
-            <button data-gmode="dogfight">DOGFIGHT</button
-            ><button data-gmode="flag">FLAG</button
-            ><button data-gmode="endless">ENDLESS</button>
+            <button data-gmode="dogfight">Dogfight</button
+            ><button data-gmode="flag">Flag</button
+            ><button data-gmode="endless">Endless</button>
           </div>
           <div class="pick">
             <select id="onLayout" aria-label="Teams"></select
-            ><button id="onFF">FRIENDLY FIRE OFF</button>
+            ><button id="onFF"><i>Friendly fire</i> off</button>
           </div>
           <p id="onDesc" class="pickNote"></p>
-          <p class="pickNote">
-            Dogfight: last team flying wins. Flag: bomb the other flags, keep
-            yours. Endless: most magenta flyers shot down; out of planes, you
-            fly on as a ghost and bomb the town.
-          </p>
+          <p id="onRules" class="pickNote"></p>
           <div id="onTeams" class="teamgrid"></div>
           <div id="onBoard" class="group hidden"></div>
           <div class="foot">
             <span>Tap a team to join it.</span
-            ><button id="onStart" class="ghost">START</button>
+            ><button id="onStart" class="ghost">Start</button>
           </div>
         </div>
         <div id="onCount" class="hidden code"></div>
         <p id="onMsg"></p>
         <div class="foot">
           <span id="onLink"></span>
-          <button id="onBack" class="ghost">BACK</button>
+          <button id="onBack" class="ghost">Back</button>
         </div>
       </div>
     </section>

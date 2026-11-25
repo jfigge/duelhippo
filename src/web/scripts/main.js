@@ -19,12 +19,10 @@
 
 // main.js — browser entry point (Vite bundles from here).
 //
-// Fonts are bundled rather than fetched from Google so the game works offline
-// in all three shells and under the page's Content-Security-Policy. Only the
-// Latin subset is pulled in, as the prototype's offline build did.
+// The type is the system's own sans-serif, so there are no fonts to bundle:
+// the game works offline in all three shells and under the page's
+// Content-Security-Policy.
 
-import "@fontsource/press-start-2p/latin-400.css";
-import "@fontsource/vt323/latin-400.css";
 import "../styles/style.css";
 
 import * as THREE from "three";

@@ -21,21 +21,24 @@
 //
 // Classic mode draws the original's ground strip along the bottom; free mode
 // draws a heading-up radar top right. Text readouts refresh at 10 Hz (cheap
-// on phones); the reticle tracks every frame.
+// on phones); the reticle and the missile lock's box track every frame.
 
 import { $, clamp, tv, basis } from "./util.js";
-import { STALL, GEAR, HOME, EB, LANE } from "./constants.js";
+import { GEAR, HOME, EB, LANE, MSL } from "./constants.js";
 import { camera } from "./scene.js";
 import { S, game } from "./state.js";
 import { tickMsg } from "./msg.js";
 import { groundY, targets, hippos, fields } from "./world.js";
-import { P, PB } from "./flight.js";
+import { P, PB, aiming, idleAtHome } from "./flight.js";
+import { sfx } from "./audio.js";
+import { lock, locked, lockers, incoming } from "./missiles.js";
 import { enemies } from "./ai.js";
 import { remotes, teamScores } from "./remote.js";
 import { net, isMode, myTeam } from "./net/bus.js";
 import { TEAM } from "./net/teams.js";
 
 let hudT = 0,
+  warnT = 0,
   rc = null,
   sc = null;
 
@@ -45,8 +48,48 @@ export function initHud() {
   drawMascot();
 }
 
+// The plane just picked, in the top right corner for PLANE_TAG seconds: its
+// name, role and what it carries.
+const PLANE_TAG = 3;
+let tagT = 0;
+export function showPlane() {
+  const [n, r, d] = $("planeTag").children;
+  n.textContent = P.pt.name;
+  r.textContent = P.pt.role;
+  d.textContent = P.pt.blurb;
+  $("planeTag").classList.add("on");
+  tagT = PLANE_TAG;
+}
+
+// The box round what the sights are locking: it closes in as the lock
+// builds, and says LOCK when it is made.
+function lockBox() {
+  const box = $("lock"),
+    t = lock.tgt;
+  if (!t || !aiming()) {
+    box.style.display = "none";
+    return;
+  }
+  // Drawing brings the camera's matrices up to date; headless, nothing draws.
+  camera.updateMatrixWorld();
+  tv.copy(t.pos).project(camera);
+  if (tv.z >= 1) {
+    box.style.display = "none";
+    return;
+  }
+  const k = Math.min(1, lock.t / MSL.lock),
+    size = Math.round(96 - 60 * k);
+  box.style.display = "block";
+  box.style.width = box.style.height = size + "px";
+  box.style.transform = `translate(${(tv.x * 0.5 + 0.5) * window.innerWidth - size / 2}px,${(-tv.y * 0.5 + 0.5) * window.innerHeight - size / 2}px)`;
+  box.classList.toggle("on", locked());
+  box.firstChild.textContent = locked() ? "LOCK" : Math.floor(k * 100) + "%";
+}
+
 export function hud(dt) {
   tickMsg(dt);
+  $("hud").classList.toggle("ads", game.state === "play" && aiming());
+  if (tagT > 0 && (tagT -= dt) <= 0) $("planeTag").classList.remove("on");
   if (game.state !== "play") return;
   if (P.alive) {
     tv.copy(P.pos).addScaledVector(basis(P.q, PB).f, 260).project(camera);
@@ -54,6 +97,7 @@ export function hud(dt) {
     r.style.display = tv.z < 1 ? "block" : "none";
     r.style.transform = `translate(${(tv.x * 0.5 + 0.5) * window.innerWidth}px,${(-tv.y * 0.5 + 0.5) * window.innerHeight}px)`;
   } else $("ret").style.display = "none";
+  lockBox();
   if ((hudT -= dt) > 0) return;
   hudT = 0.1;
   const alt = Math.max(0, P.pos.y - groundY(P.pos.x, P.pos.z) - GEAR);
@@ -70,17 +114,36 @@ export function hud(dt) {
   $("hAlt").textContent = Math.round(alt);
   $("hAmmo").textContent = Math.floor(P.ammo);
   $("hBombs").textContent = P.bombs;
+  $("hPlane").textContent = P.pt.name;
+  $("hMslRow").classList.toggle("hidden", !P.pt.missiles);
+  $("hMsl").textContent = P.msl;
+  $("bMsl").classList.toggle("on", locked());
+  $("planes").classList.toggle("hidden", !idleAtHome());
   if (net.on) teamPanel();
   $("bThr").style.width = P.thr * 100 + "%";
   $("bFuel").style.width = P.fuel + "%";
   $("bDmg").style.width = P.dmg + "%";
   $("thrFill").style.height = P.thr * 100 + "%";
   let w = "";
+  const chased = P.alive && incoming(),
+    lockedOn = P.alive && lockers.size > 0;
   if (P.alive) {
-    if (P.fuel <= 0) w = "OUT OF FUEL — glide home";
+    if (chased) w = "MISSILE — break hard!";
+    else if (P.spin)
+      w =
+        game.mode === "classic"
+          ? "SPIN — push, throttle off"
+          : "SPIN — push, throttle off, opposite rudder";
+    else if (lockedOn) w = "LOCKED ON — shake them off";
+    else if (P.fuel <= 0) w = "OUT OF FUEL — glide home";
     else if (P.fuel < 25) w = "LOW FUEL — return to base";
-    else if (!P.grounded && P.speed < STALL) w = "STALL — nose down";
+    else if (!P.grounded && P.speed < P.pt.stall) w = "STALL — nose down";
     else if (P.dmg >= 70 && P.dmg < 100) w = "HEAVY DAMAGE";
+  }
+  // Being locked, or chased, beeps: faster for a missile on its way.
+  if ((chased || lockedOn) && (warnT -= 0.1) <= 0) {
+    warnT = chased ? 0.2 : 0.6;
+    sfx.warn();
   }
   $("warn").textContent = w;
   $("warn").classList.toggle("on", !!w);
@@ -235,36 +298,23 @@ function teamPanel() {
   );
 }
 
-// Pixel-hippo pilot for the title card (original art).
+// The hippo pilot for the title card (original art): ears, cyan goggles-eyes,
+// nostrils and a red scarf, in the HUD's colours.
 function drawMascot() {
-  const art = [
-    "..11......11..",
-    ".1221....1221.",
-    ".111111111111.",
-    "11113311331111",
-    "11113311331111",
-    "11111111111111",
-    ".111111111111.",
-    ".144111111441.",
-    ".111111111111.",
-    "..1111111111..",
-    "...55555555...",
-    "....55..55....",
-  ];
-  const pal = {
-    1: "#9a95b8",
-    2: "#ff9ec7",
-    3: "#55ffff",
-    4: "#3a3550",
-    5: "#ff5555",
-  };
-  let s = "";
-  art.forEach((row, y) =>
-    [...row].forEach((ch, x) => {
-      if (pal[ch])
-        s += `<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${pal[ch]}"/>`;
-    }),
-  );
-  $("mascot").innerHTML =
-    `<svg viewBox="0 0 14 12" shape-rendering="crispEdges" aria-hidden="true">${s}</svg>`;
+  $("mascot").innerHTML = `<svg viewBox="0 0 140 124" aria-hidden="true">
+    <ellipse cx="32" cy="20" rx="15" ry="14" fill="#9a95b8"/>
+    <ellipse cx="108" cy="20" rx="15" ry="14" fill="#9a95b8"/>
+    <ellipse cx="32" cy="22" rx="8" ry="7" fill="#ff9ec7"/>
+    <ellipse cx="108" cy="22" rx="8" ry="7" fill="#ff9ec7"/>
+    <rect x="8" y="16" width="124" height="90" rx="44" fill="#9a95b8"/>
+    <rect x="16" y="62" width="108" height="40" rx="20" fill="#a9a4c6"/>
+    <ellipse cx="50" cy="46" rx="11" ry="12" fill="#55ffff"/>
+    <ellipse cx="90" cy="46" rx="11" ry="12" fill="#55ffff"/>
+    <circle cx="53" cy="42" r="3.5" fill="#fff"/>
+    <circle cx="93" cy="42" r="3.5" fill="#fff"/>
+    <ellipse cx="34" cy="78" rx="8" ry="4.5" fill="#3a3550"/>
+    <ellipse cx="106" cy="78" rx="8" ry="4.5" fill="#3a3550"/>
+    <path d="M34 102 Q70 112 106 102 L104 114 Q70 122 36 114 Z" fill="#ff5555"/>
+    <path d="M80 110 L92 124 L100 118 L90 108 Z" fill="#e04848"/>
+  </svg>`;
 }

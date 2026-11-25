@@ -21,7 +21,9 @@
 //
 // Numbers from DESIGN.md: bullets live 1.4 s and are swept as segments (so a
 // fast round cannot tunnel through a plane between frames); bombs fall under
-// gravity and blast within target radius + 12 m.
+// gravity and blast within target radius + 12 m. A round does the damage the
+// plane hit is built to take (constants.js PLANES `armour`; the Kite's is
+// DESIGN.md's 6).
 
 import * as THREE from "three";
 import { V, tv, segD2, basis } from "./util.js";
@@ -98,7 +100,7 @@ export function updBullets(dt) {
       ) {
         hit = true;
         P.hitBy = b.seat;
-        P.dmg = Math.min(100, P.dmg + 6);
+        P.dmg = Math.min(100, P.dmg + P.pt.armour);
         sfx.hit();
         puff(P.pos, 0xff55ff, 3, 6, 0.6, 0.3);
         if (P.dmg >= 100) say("Engine hit! Going down…", 2.5);
@@ -144,7 +146,7 @@ export function updBullets(dt) {
     } else if (P.alive && !P.ghost && segD2(b.p0, p, P.pos) < 22) {
       hit = true;
       P.hitBy = "e";
-      P.dmg = Math.min(100, P.dmg + 6);
+      P.dmg = Math.min(100, P.dmg + P.pt.armour);
       sfx.hit();
       puff(P.pos, 0xff55ff, 3, 6, 0.6, 0.3);
       if (P.dmg >= 100) say("Engine hit! Going down…", 2.5);
