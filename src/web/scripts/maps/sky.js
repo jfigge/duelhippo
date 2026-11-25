@@ -564,9 +564,11 @@ export default function build(kit) {
       height,
       floor: () => 0,
       crash,
-      deck: true,
       dust: 0xe6ebf0,
-      avoid: kit.avoider(height, 0),
+      // The careful avoider (side probes, the way it wants checked too): a
+      // flyer skirting an island's edge at a shallow angle otherwise sees
+      // the rock only on some frames, and turns back into it.
+      avoid: kit.avoider(height, 0, Infinity, 10),
       town: TOWN,
       field,
       unfield,

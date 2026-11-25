@@ -87,6 +87,9 @@ export function fire(pos, dir, spd, own, seat = null) {
 }
 
 export function updBullets(dt) {
+  // The other planes that can be hit, gathered once a frame (and only if a
+  // round of this player's needs them), not once a round.
+  let solid = null;
   for (const b of bullets) {
     if (!b.on) continue;
     b.p0.copy(b.m.position);
@@ -129,7 +132,7 @@ export function updBullets(dt) {
         }
       // Another plane hit: sparks only; their machine takes the damage.
       if (!hit && net.on)
-        for (const r of solidRemotes())
+        for (const r of (solid ??= solidRemotes()))
           if (canHurt(r.seat) && segD2(b.p0, p, r.pos) < 22) {
             hit = true;
             puff(r.pos, 0xfff27a, 3, 6, 0.6, 0.3);
@@ -140,9 +143,11 @@ export function updBullets(dt) {
         for (const t of targets)
           if (
             t.alive &&
-            p.y < t.y + t.h &&
-            p.y > t.floor &&
-            Math.hypot(p.x - t.x, p.z - t.z) < t.r
+            (t.hit
+              ? t.hit(t, p, 0)
+              : p.y < t.y + t.h &&
+                p.y > t.floor &&
+                Math.hypot(p.x - t.x, p.z - t.z) < t.r)
           ) {
             hit = true;
             hurtTarget(t, 1, p.clone());
@@ -153,6 +158,11 @@ export function updBullets(dt) {
           if (
             h.alive &&
             p.y < h.g.position.y + 4.5 &&
+            // Not from under a hippo up on a hill or an island: the round's
+            // path this frame reaches down to its feet. A hippo on the
+            // ground (y = 0, the Countryside's) is the prototype's test.
+            (h.g.position.y <= 0 ||
+              Math.max(b.p0.y, p.y) > h.g.position.y - 1) &&
             Math.hypot(p.x - h.x, p.z - h.z) < 4
           ) {
             hit = true;
@@ -251,9 +261,11 @@ export function updBombs(dt) {
       (t) =>
         t.alive &&
         t.floor > -Infinity &&
-        p.y > t.floor &&
-        p.y < t.y + t.h &&
-        Math.hypot(p.x - t.x, p.z - t.z) < t.r,
+        (t.hit
+          ? t.hit(t, p, 0)
+          : p.y > t.floor &&
+            p.y < t.y + t.h &&
+            Math.hypot(p.x - t.x, p.z - t.z) < t.r),
     );
     if (into || p.y <= groundY(p.x, p.z, p.y) + 0.3) {
       b.on = false;
@@ -264,14 +276,23 @@ export function updBombs(dt) {
       for (const t of targets)
         if (
           t.alive &&
-          Math.hypot(p.x - t.x, p.z - t.z) < t.r + 12 &&
-          // one that floats, only from a bomb that bursts near it
-          (t.floor === -Infinity ||
-            (p.y > t.floor - 12 && p.y < t.y + t.h + 12))
+          (t.hit
+            ? t.hit(t, p, 12)
+            : Math.hypot(p.x - t.x, p.z - t.z) < t.r + 12 &&
+              // one that floats, only from a bomb that bursts near it
+              (t.floor === -Infinity ||
+                (p.y > t.floor - 12 && p.y < t.y + t.h + 12)))
         )
           hurtTarget(t, 12, p.clone());
+      // A hippo up on a hill or an island hears only a bomb that bursts
+      // near its own height; one on the ground (y = 0), any nearby.
       for (const h of hippos)
-        if (h.alive && Math.hypot(p.x - h.x, p.z - h.z) < 14) scareHippo(h);
+        if (
+          h.alive &&
+          Math.hypot(p.x - h.x, p.z - h.z) < 14 &&
+          (h.g.position.y <= 0 || Math.abs(p.y - h.g.position.y) < 14)
+        )
+          scareHippo(h);
     }
   }
 }

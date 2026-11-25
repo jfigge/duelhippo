@@ -519,10 +519,14 @@ export default function build(kit) {
     return "Crashed — land on a runway";
   }
 
+  // `sooty` and `lifting`: in the ash, in an updraft, this frame. Each is
+  // said once, on the way in, not every frame it lasts.
   let ashT = 0,
     smokeT = 0,
     ventT = 0,
-    craterT = 0;
+    craterT = 0,
+    sooty = false,
+    lifting = false;
   const tv = new THREE.Vector3();
   function tick(dt) {
     clock += dt;
@@ -554,12 +558,15 @@ export default function build(kit) {
       // A fresh plane (or a dead one) has a clean engine.
       ashT = 0;
       land.power = 1;
+      sooty = lifting = false;
       return;
     }
-    if (inAsh(P.pos)) {
+    const ash = inAsh(P.pos);
+    if (ash) {
       ashT = ASH;
-      say("Ash in the engine!", 1.5);
+      if (!sooty) say("Ash in the engine!", 1.5);
     }
+    sooty = ash;
     if (ashT > 0) {
       ashT -= dt;
       land.power = ashT > 0 ? 0 : 1;
@@ -568,14 +575,17 @@ export default function build(kit) {
         puff(P.pos, 0x2e2a28, 1, 2, 1.6, 1.4, 1);
       }
     }
+    let lift = false;
     if (P.pos.y < UP.top)
       for (const v of vents)
         if (Math.hypot(P.pos.x - v.x, P.pos.z - v.z) < UP.r) {
           P.pos.y += UP.rate * dt;
           P.sink = 0;
-          say("Updraft!", 0.8);
+          if (!lifting) say("Updraft!", 0.8);
+          lift = true;
           break;
         }
+    lifting = lift;
   }
 
   // A team game: the ring's spots all lie on the flat plain, so a field is
@@ -628,6 +638,12 @@ export default function build(kit) {
     below: 0x4f7f50,
     enter() {
       ashT = 0;
+    },
+    // A new game: a clean engine.
+    start() {
+      ashT = 0;
+      land.power = 1;
+      sooty = lifting = false;
     },
     leave() {
       ashT = 0;

@@ -33,12 +33,37 @@
 // sends on the data channel when that is open and through the server
 // otherwise, and reads both. The lower seat makes the WebRTC offer, so two
 // never cross.
+//
+// Every message carries a number, one count per machine for both kinds:
+// `sq` on a sure one, `fq` on a fast one. The receiver drops a sure message
+// it has had before and a fast one older than the last, then hands the
+// number on with the message, so the game can tell a state update sent
+// before an event from one sent after it, whichever channel was quicker.
+// A sure message sent on a data channel is kept for a while: one that dies
+// (closes, or fails) may have taken some with it, so they all go again
+// through the server, and the duplicates are dropped at the other end.
+// Shots, bombs and hits on a flyer (protocol.js TRANSIENT) are not kept:
+// half a minute late they would be fired as new. A connection that looks
+// in trouble ("disconnected") sends everything both ways until it either
+// recovers or fails, which shrinks what a dying channel can lose.
+
+import { TRANSIENT } from "./protocol.js";
 
 const ICE = [
   { urls: "stun:stun.cloudflare.com:3478" },
   { urls: "stun:stun.l.google.com:19302" },
 ];
 const DIRECT_WITHIN_MS = 7000;
+// A data channel can look open for up to half a minute after its path has
+// died (ICE consent lapses after 30 s), so that long is kept for resending.
+const KEEP_MS = 40000;
+const KEEP_MAX = 1000;
+// Resent messages go through the server in bundles of about this many
+// characters, under its MAX_MESSAGE (src/server/room.js), so as not to
+// flood its per-second limit one message at a time.
+const BUNDLE_CHARS = 12000;
+// How many sure numbers a receiver remembers, to spot a repeat.
+const SEEN_MAX = 4096;
 
 // Close codes from src/server/room.js, as words.
 const CLOSE_TEXT = {
@@ -83,8 +108,14 @@ export class Mesh {
     this.code = room.code;
     this.relayOnly = relayOnly;
     this.first = (room.peers || []).filter(Number.isInteger);
+    // Everyone here in the order they came: the server lists the players
+    // already in the room in arrival order, and introduces later ones as
+    // they come, so every machine sees the same order (the lobby's
+    // organiser is its first).
+    this.order = [...this.first.filter((s) => s !== this.seat), this.seat];
     this.peers = new Map(); // seat → Peer
     this.closed = false;
+    this.seq = 0; // the last number given to a message
     // Set by the owner:
     this.onmessage = () => {}; // (message, from seat)
     this.onpeer = () => {}; // (seat): someone is here
@@ -109,19 +140,27 @@ export class Mesh {
 
   // To everyone, or to the seats in `to`.
   send(msg, fast = false, to = null) {
-    const text = JSON.stringify(msg);
+    const n = ++this.seq;
+    const m = fast ? { ...msg, fq: n } : { ...msg, sq: n };
+    const text = JSON.stringify(m);
     const relay = [];
     for (const p of this.peers.values()) {
       if (to && !to.includes(p.seat)) continue;
-      if (!p.sendDirect(text, fast)) relay.push(p.seat);
+      if (!p.sendDirect(text, fast) || p.doubt) relay.push(p.seat);
+      else if (!fast && !TRANSIENT.has(m.t)) p.keep(m);
     }
     if (!relay.length || this.ws.readyState !== 1) return;
     // A relayed state update is not worth queueing behind a slow socket.
     if (fast && this.ws.bufferedAmount > 32 * 1024) return;
     const all = !to && relay.length === this.peers.size;
     this.ws.send(
-      JSON.stringify(all ? { t: "g", m: msg } : { t: "g", m: msg, to: relay }),
+      JSON.stringify(all ? { t: "g", m } : { t: "g", m, to: relay }),
     );
+  }
+
+  // The player who has been here longest.
+  get organiser() {
+    return this.order[0] ?? this.seat;
   }
 
   // How each peer is reached: { direct, relay, connecting } counts.
@@ -137,6 +176,7 @@ export class Mesh {
 
   close() {
     this.onclose = this.onleft = this.onpath = () => {};
+    this.onmessage = this.onpeer = () => {};
     for (const p of this.peers.values()) p.drop();
     this.peers.clear();
     this.closed = true;
@@ -158,6 +198,7 @@ export class Mesh {
       if (!p) return;
       p.drop();
       this.peers.delete(m.seat);
+      this.order = this.order.filter((s) => s !== m.seat);
       this.onleft(m.seat);
     }
   }
@@ -168,14 +209,32 @@ export class Mesh {
     if (p) return p;
     p = new Peer(this, seat);
     this.peers.set(seat, p);
+    if (!this.order.includes(seat)) this.order.push(seat);
     this.onpeer(seat);
     p.start();
     return p;
   }
 
-  deliver(m, from) {
-    if (m && typeof m === "object" && this.peers.has(from))
-      this.onmessage(m, from);
+  deliver(m, from, bundled = false) {
+    const p = this.peers.get(from);
+    if (!p || !m || typeof m !== "object") return;
+    // Sure messages resent after a data channel died (Peer.resend).
+    if (m.t === "rs") {
+      if (!bundled && Array.isArray(m.ms))
+        for (const x of m.ms) this.deliver(x, from, true);
+      return;
+    }
+    let n;
+    if (Number.isInteger(m.sq)) {
+      if (!p.fresh(m.sq)) return;
+      n = m.sq;
+      delete m.sq;
+    } else if (Number.isInteger(m.fq)) {
+      if (m.fq <= p.lastFast) return;
+      n = p.lastFast = m.fq;
+      delete m.fq;
+    }
+    this.onmessage(m, from, n);
   }
 
   toServer(m) {
@@ -193,6 +252,21 @@ class Peer {
     this.ch = {};
     this.pending = [];
     this.timer = 0;
+    this.kept = []; // {at, m}: sure messages lately sent on the data channel
+    this.seen = new Set(); // sure numbers had from them
+    this.top = 0; // the highest of those
+    this.lastFast = 0; // the number on the last fast message had from them
+    this.doubt = false; // the direct path may be dying: send both ways
+  }
+
+  health(state) {
+    if (state === "failed") return this.settle("relay");
+    if (this.path !== "direct") return;
+    if (state === "disconnected" && !this.doubt) {
+      this.doubt = true;
+      this.resend();
+    } else if (state === "connected" || state === "completed")
+      this.doubt = false;
   }
 
   start() {
@@ -204,6 +278,9 @@ class Peer {
       if (e.candidate) this.sig({ c: e.candidate.toJSON() });
     };
     pc.ondatachannel = (e) => this.attach(e.channel);
+    // connectionState where there is one; older Safari has only the ICE one.
+    pc.onconnectionstatechange = pc.oniceconnectionstatechange = () =>
+      this.health(pc.connectionState || pc.iceConnectionState);
     if (offerer) {
       this.attach(
         pc.createDataChannel("fast", { ordered: false, maxRetransmits: 0 }),
@@ -270,13 +347,64 @@ class Peer {
     clearTimeout(this.timer);
     if (path === "relay") this.dropRtc();
     if (this.path === path) return;
+    const was = this.path;
     this.path = path;
+    this.doubt = false;
+    if (was === "direct") this.resend();
     this.mesh.onpath(this.seat, path);
   }
 
   drop() {
     this.dropRtc();
+    this.kept = [];
     this.path = "relay";
+  }
+
+  // A sure message just sent on the data channel, kept in case the channel
+  // dies with it unsent.
+  keep(m) {
+    const now = Date.now();
+    this.kept.push({ at: now, m });
+    while (
+      this.kept.length > KEEP_MAX ||
+      (this.kept.length && this.kept[0].at < now - KEEP_MS)
+    )
+      this.kept.shift();
+  }
+
+  // The data channel has died: everything it may have lost goes again,
+  // in order, through the server.
+  resend() {
+    let bundle = [],
+      size = 0;
+    const flush = () => {
+      if (bundle.length)
+        this.mesh.toServer({
+          t: "g",
+          m: { t: "rs", ms: bundle },
+          to: [this.seat],
+        });
+      bundle = [];
+      size = 0;
+    };
+    for (const { m } of this.kept.splice(0)) {
+      const n = JSON.stringify(m).length + 1;
+      if (size + n > BUNDLE_CHARS) flush();
+      bundle.push(m);
+      size += n;
+    }
+    flush();
+  }
+
+  // True the first time sure number `n` arrives from them.
+  fresh(n) {
+    if (this.seen.has(n)) return false;
+    this.seen.add(n);
+    if (n > this.top) this.top = n;
+    if (this.seen.size > SEEN_MAX)
+      for (const s of this.seen)
+        if (s <= this.top - SEEN_MAX / 2) this.seen.delete(s);
+    return true;
   }
 
   dropRtc() {
@@ -292,6 +420,8 @@ class Peer {
     this.ch = {};
     if (this.pc) {
       this.pc.onicecandidate = this.pc.ondatachannel = null;
+      this.pc.onconnectionstatechange = null;
+      this.pc.oniceconnectionstatechange = null;
       this.pc.close();
       this.pc = null;
     }

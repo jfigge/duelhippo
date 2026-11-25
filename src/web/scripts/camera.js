@@ -29,7 +29,7 @@ import { UP, tv, basis } from "./util.js";
 import { HOME, ADS } from "./constants.js";
 import { camera } from "./scene.js";
 import { game } from "./state.js";
-import { floorY } from "./world.js";
+import { floorY, groundY, land } from "./world.js";
 import { P, PB, crashAt, aiming } from "./flight.js";
 
 let orbitT = 0;
@@ -47,14 +47,17 @@ function zoom(dt, want) {
 export function updCamera(dt) {
   zoom(dt, aiming() ? ADS.fov : FOV);
   if (game.state !== "play") {
+    // Over the home runway, wherever it lies: a raised one (an island's, an
+    // airship's) is not seen from under it. The Countryside's is at 0.
+    const y0 = land.height ? groundY(HOME.x, HOME.z) : 0;
     orbitT += dt * 0.07;
     camera.up.set(0, 1, 0);
     camera.position.set(
       HOME.x - 100 + Math.cos(orbitT) * 150,
-      42,
+      42 + y0,
       Math.sin(orbitT) * 150 + 40,
     );
-    camera.lookAt(HOME.x - 160, 6, 0);
+    camera.lookAt(HOME.x - 160, 6 + y0, 0);
     return;
   }
   if (!P.alive) {

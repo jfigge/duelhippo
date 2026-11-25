@@ -643,6 +643,7 @@ export default function build(kit) {
   };
   const muzzle = new THREE.Vector3();
   function tick(dt) {
+    settle();
     for (const t of targets) {
       if (t.kind !== "flak" || !t.alive) continue;
       t.flak ??= { cd: Math.random() * BURST.rest, n: 0 };
@@ -675,7 +676,15 @@ export default function build(kit) {
   // Each on a flat pad cut or built where its spot falls: the gorge floor
   // if that is under it, else the plateau. The pad is flat well past the
   // runway's cells (the grid is at most 81 m apart) and the hangar, and
-  // blends back into the ground over 120 m.
+  // blends back into the ground over 120 m. The ground (H) changes at once;
+  // its mesh is drawn again once the fields are all down (settle: the
+  // game's start, or its first frame), not once a field.
+  let undrawn = false;
+  function settle() {
+    if (!undrawn) return;
+    undrawn = false;
+    drawGround();
+  }
   function field(f, c) {
     const y = base(f.x, f.z) > PLATEAU / 2 ? PLATEAU : 0,
       hx = f.hl + 90,
@@ -693,7 +702,7 @@ export default function build(kit) {
           k = j * nx + i;
         H[k] += (y - H[k]) * w;
       }
-    drawGround();
+    undrawn = true;
     pads.push(f);
     const on = new THREE.Group();
     on.position.y = y;
@@ -702,11 +711,14 @@ export default function build(kit) {
     kit.hangar(-120, -70, c.plane[1], false, on);
     return [{ x: f.x - 120, z: f.z - 70, r: 17, h: y + 12.5 }];
   }
+  // The fields gone: the ground at once, the mesh when the map is next
+  // shown or played (enter, start).
   function unfield() {
-    if (!pads.length) return;
-    pads.length = 0;
-    H.set(H0);
-    drawGround();
+    if (pads.length) {
+      pads.length = 0;
+      H.set(H0);
+      undrawn = true;
+    }
   }
 
   return {
@@ -722,7 +734,8 @@ export default function build(kit) {
       floor,
       crash,
       dust: 0xc9a06a,
-      avoid: kit.avoider(height, 0),
+      // Careful, as Sky islands': the walls are skirted at shallow angles.
+      avoid: kit.avoider(height, 0, Infinity, 10),
       town,
       kinds,
       tick,
@@ -736,5 +749,7 @@ export default function build(kit) {
     sky: 0xf0cfa2,
     fog: [650, 3300],
     below: 0xc07a45,
+    enter: settle,
+    start: settle,
   };
 }

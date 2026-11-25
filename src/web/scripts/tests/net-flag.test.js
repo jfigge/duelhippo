@@ -67,6 +67,7 @@ test("a flag game: one flag per team, beside its field", async () => {
     v: PROTO,
     layout: "2x1",
     mode: "flag",
+    map: "field",
     ff: false,
     speed: 1,
     roster: [
@@ -108,6 +109,9 @@ test("three bombs on theirs: the flag falls, their team is out, we win", () => {
   );
   assert.equal(S.score, s + 500);
   assert.equal(duel.state, "over");
+  assert.deepEqual(net.sent("fin")[0].fl, [0], "we tell what we saw");
+  assert.equal($("oTitle").textContent, "Settling the result…");
+  net.from(0, { t: "fin", id: "aaaaaaaaaaaaaaaa", sc: 0, o: 0, fl: [0] });
   assert.equal($("oTitle").textContent, "You win!");
 });
 
@@ -119,5 +123,35 @@ test("a rematch, and this time our flag falls: we are out at once", async () => 
   for (let k = 0; k < 3; k++) net.from(0, { t: "tg", i, d: 12 });
   assert.ok(!P.alive, "our plane goes with it");
   assert.equal(duel.state, "over");
+  net.from(0, { t: "fin", id: "bbbbbbbbbbbbbbbb", sc: 500, o: 0, fl: [1] });
   assert.equal($("oTitle").textContent, "Cyan wins");
+});
+
+test("both flags down at once, each seen first by its bomber: a draw for both", async () => {
+  await play("cccccccccccccccc");
+  for (let i = 0; i < 3 && flag(0).alive; i++) bomb(flag(0));
+  assert.equal(duel.state, "over");
+  assert.equal($("oTitle").textContent, "Settling the result…");
+  // Ace's bomb took our flag before our news of theirs arrived.
+  net.from(0, { t: "fin", id: "cccccccccccccccc", sc: 500, o: 0, fl: [1] });
+  assert.equal($("oTitle").textContent, "It's a draw");
+});
+
+test("a rematch while we still wait for a final score: settled now, and we play", async () => {
+  await play("dddddddddddddddd");
+  for (let i = 0; i < 3 && flag(0).alive; i++) bomb(flag(0));
+  assert.equal($("oTitle").textContent, "Settling the result…");
+  // Ace has had our fin and settled; theirs to us is lost. Their go must
+  // not leave us behind on the over card.
+  await play("eeeeeeeeeeeeeeee");
+  assert.equal(duel.net.match, "eeeeeeeeeeeeeeee");
+  assert.ok(flag(0).alive && flag(1).alive, "fresh flags");
+});
+
+test("a rematch while we still fly the last match: it ends here, and we play", async () => {
+  net.clear();
+  game.run(500);
+  await play("ffffffffffffffff");
+  assert.equal(net.sent("fin")[0].id, "eeeeeeeeeeeeeeee", "we said so");
+  assert.equal(duel.net.match, "ffffffffffffffff");
 });

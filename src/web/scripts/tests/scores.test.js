@@ -146,3 +146,36 @@ test("a peer's copy cannot smuggle in strangers or nonsense", () => {
   );
   assert.equal(named[0].w, null, "no team 7 played");
 });
+
+test("a merge is the same whichever copy comes first", () => {
+  const ours = [
+    {
+      ...match("m1", 5, 500, 200, 0),
+      p: [
+        [A, "Ann", 500, 0],
+        [B, "Bo", 200, 1],
+      ],
+    },
+  ];
+  const theirs = [
+    {
+      ...match("m1", 4, 400, 350, 1),
+      p: [
+        [A, "Ann", 400, 0],
+        [B, "Bob", 350, 1],
+      ],
+    },
+  ];
+  const ab = mergeLists("dogfight", ours, theirs, [A, B]);
+  const ba = mergeLists("dogfight", theirs, ours, [A, B]);
+  assert.deepEqual(ab, ba);
+  assert.equal(ab[0].w, null, "copies that disagree name no winner");
+  assert.equal(ab[0].at, 4);
+  const same = mergeLists(
+    "dogfight",
+    [match("m2", 1, 1, 1, 1)],
+    [match("m2", 1, 2, 2, 1)],
+    [A, B],
+  );
+  assert.equal(same[0].w, 1, "copies that agree keep it");
+});

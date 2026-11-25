@@ -32,8 +32,8 @@ export default defineConfig({
   server: {
     port: Number(process.env.WEB_PORT) || 5173,
     strictPort: true,
-    // The root is web/, but the bundled fonts are served straight out of
-    // node_modules/ in dev; let the dev server reach the whole of src/.
+    // The root is web/, but three.js and the other dependencies live in
+    // src/node_modules/, which the dev server must be able to serve.
     fs: { allow: [here(".")] },
   },
   preview: {

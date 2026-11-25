@@ -23,7 +23,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadPort } from "./harness.js";
+import { loadPort, seededRandom } from "./harness.js";
 
 const game = await loadPort(5);
 const { w, duel } = game;
@@ -35,7 +35,8 @@ const { mapNow } = await import("../maps.js");
 const { HOME, EB, GEAR } = await import("../constants.js");
 const { fieldSpots } = await import("../net/teams.js");
 const { scene } = await import("../scene.js");
-const { FJORD, CONVOY, blizzards } = await import("../maps/arctic.js");
+const { FJORD, CONVOY, blizzards, convoyAt } =
+  await import("../maps/arctic.js");
 const msg = () => $("msg").textContent;
 duel.S.best = 1e6;
 (await import("../game.js")).showMaps();
@@ -207,29 +208,77 @@ test("Arctic: the convoy drives the fjord and turns round at its ends", () => {
   game.run(5000);
   cars.forEach((t, i) => {
     const v = (t.x - x0[i]) / 5;
-    assert.ok(Math.abs(v) >= 6 && Math.abs(v) <= 10, `${v} m/s`);
+    assert.ok(v >= 6 && v <= 10, `${v} m/s, up the fjord`);
     assert.equal(t.z, CONVOY.z);
     assert.equal(t.g.position.x, t.x);
+    assert.equal(t.g.rotation.y, 0, "facing up it");
     assert.equal(groundY(t.x, t.z), 0, "on the ice");
   });
-  // Taken to the fjord's head, the column turns back down it.
-  const lead = Math.max(...cars.map((t) => t.x));
-  for (const t of cars) t.x += FJORD.x1 - 10 - lead;
-  game.run(100);
-  const at = cars.map((t) => t.x);
-  game.run(3000);
-  cars.forEach((t, i) => assert.ok(t.x < at[i], "heading back"));
-  assert.ok(Math.max(...cars.map((t) => t.x)) < FJORD.x1);
-  // And at its foot, back up again.
-  const tail = Math.min(...cars.map((t) => t.x));
-  for (const t of cars) t.x += FJORD.x0 + 10 - tail;
-  game.run(100);
-  const at2 = cars.map((t) => t.x);
-  game.run(3000);
-  cars.forEach((t, i) => assert.ok(t.x > at2[i], "heading up"));
+  // Over a long while (convoyAt: where the column is, by time): its lead
+  // (1700 m at the start) turns short of the fjord's head and its tail
+  // (280 m behind) short of its foot, at 8 m/s, turning to face the way.
+  const lead = (T) => 1700 + convoyAt(T).off,
+    tail = (T) => lead(T) - 280;
+  assert.equal(convoyAt(0).off, 0);
+  let hi = -Infinity,
+    lo = Infinity,
+    turns = 0,
+    way = 0;
+  for (let T = 0.5; T < 2500; T += 0.5) {
+    const d = lead(T) - lead(T - 0.5);
+    assert.ok(Math.abs(d) <= 4 + 1e-9, `${d} m in half a second`);
+    if (d && Math.sign(d) !== way) {
+      if (way) turns++;
+      way = Math.sign(d);
+    }
+    hi = Math.max(hi, lead(T));
+    lo = Math.min(lo, tail(T));
+  }
+  // (sampled every 4 m of the way)
+  assert.ok(hi <= FJORD.x1 - 30 && hi > FJORD.x1 - 34, `lead to ${hi}`);
+  assert.ok(lo >= FJORD.x0 + 30 && lo < FJORD.x0 + 34, `tail to ${lo}`);
+  assert.ok(turns >= 2, `${turns} turns`);
+  // Turning round at the head: half a turn in ~2.6 s, then facing back.
+  const head = (FJORD.x1 - 30 - 1700) / CONVOY.speed;
+  assert.ok(Math.abs(convoyAt(head + 1).yaw - 1.2) < 1e-6);
+  assert.equal(convoyAt(head + 10).yaw, Math.PI);
+  assert.ok(lead(head + 10) < lead(head));
+});
+
+test("Arctic: two fresh starts move the convoy and the weather alike", () => {
+  const snap = () => ({
+    cars: convoy().map((t) => [t.x, t.g.rotation.y]),
+    storms: blizzards.map((b) => [b.x, b.z]),
+  });
+  game.start("free");
+  game.run(5000);
+  const first = snap();
+  // Into a blizzard, a while longer; then a new game.
+  const b = blizzards[0];
+  flyAt(b.x, 220, b.z, 45);
+  game.run(4000);
+  assert.ok(scene.fog.far < 450, "whited out");
+  game.start("free");
+  assert.deepEqual(
+    [scene.fog.near, scene.fog.far],
+    [550, 3000],
+    "the new game starts in clear air",
+  );
+  game.run(5000);
+  // (to the float: the frames' clock is a sum)
+  const near = (a, b) =>
+    a.forEach((p, i) =>
+      p.forEach((v, k) => assert.ok(Math.abs(v - b[i][k]) < 1e-6, `${v}`)),
+    );
+  const again = snap();
+  near(again.cars, first.cars);
+  near(again.storms, first.storms);
 });
 
 test("Arctic: the enemy flyers hunt the player round the mountains", () => {
+  // Its own random numbers, so what it finds is not down to the tests
+  // before it.
+  Math.random = seededRandom(13);
   game.start("free");
   let seen = 0,
     hills = 0,

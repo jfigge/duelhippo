@@ -39,11 +39,13 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   makeCode,
-  normaliseCode,
   admit,
   route,
   acceptable,
   underLimit,
+  arrivalOrder,
+  nextArrival,
+  joinCode,
   CLOSE,
 } from "./room.js";
 import { makeBoard, parseId, parseSubmit } from "./board.js";
@@ -90,7 +92,7 @@ export default {
 
     const join = url.pathname.match(/^\/join\/([^/]+)$/);
     if (join && upgrade) {
-      const code = normaliseCode(decodeURIComponent(join[1]));
+      const code = joinCode(join[1]);
       // A malformed code still gets a socket, so the player hears why.
       return room(env, code || "AAAA").fetch(
         `https://room/${code}?as=${code ? "guest" : "bad"}`,
@@ -154,20 +156,24 @@ export class Room extends DurableObject {
 
   seatOf = (ws) => ws.deserializeAttachment()?.seat;
 
+  // Everyone in the room: [{seat, at}], `at` their place in arrival order.
+  players() {
+    return this.ctx
+      .getWebSockets()
+      .map((ws) => ws.deserializeAttachment())
+      .filter((a) => a && Number.isInteger(a.seat));
+  }
+
   seats() {
-    return new Set(
-      this.ctx
-        .getWebSockets()
-        .map(this.seatOf)
-        .filter((s) => Number.isInteger(s)),
-    );
+    return new Set(this.players().map((p) => p.seat));
   }
 
   async fetch(request) {
     const url = new URL(request.url);
     const code = url.pathname.slice(1);
     const kind = url.searchParams.get("as");
-    const present = this.seats();
+    const here = this.players();
+    const present = new Set(here.map((p) => p.seat));
 
     // Taken: answered before any socket exists, so the worker can retry.
     const verdict =
@@ -190,9 +196,9 @@ export class Room extends DurableObject {
 
     const { seat } = verdict;
     this.ctx.acceptWebSocket(server, [String(seat)]);
-    server.serializeAttachment({ seat });
+    server.serializeAttachment({ seat, at: nextArrival(here) });
     server.send(
-      JSON.stringify({ t: "room", code, seat, peers: [...present].sort() }),
+      JSON.stringify({ t: "room", code, seat, peers: arrivalOrder(here) }),
     );
     for (const s of present) this.to(s, JSON.stringify({ t: "peer", seat }));
     return new Response(null, { status: 101, webSocket: client });

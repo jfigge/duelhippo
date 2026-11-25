@@ -18,7 +18,8 @@ Every entry point is in the Makefile:
 prototype this game was ported from. Never edit anything there.
 
 The prototype is the reference implementation. `src/web/scripts/tests/harness.js`
-loads it as shipped (three.js r128 as a global) and runs it next to the port.
+loads it (three.js r128 as a global), with the deliberate fixes listed in
+its `PROTO_FIXES` applied to the source text, and runs it next to the port.
 
 ## The invariant: gameplay matches the prototype
 Until the requirements say otherwise, behaviour and numbers stay identical to
@@ -52,16 +53,19 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   the prototype's. Keep it that way: a new hook goes behind the guard, and
   must not add or reorder random draws on the one-player path.
   - **Mesh.** Every pair connects directly (`net/link.js`), with a per-pair
-    server relay as the fallback. The lobby's organiser is the lowest seat in
-    the room; it owns the setup (layout, mode, friendly fire, roster) and
-    nothing else.
+    server relay as the fallback. The lobby's organiser is whoever has been
+    in the room longest (the server lists peers in arrival order); it owns
+    the setup (layout, mode, map, friendly fire, roster) and nothing else.
+    "Sure" messages carry a running number and are resent over the relay if
+    a direct channel dies; fast ones older than the last are dropped.
   - **Authority.** Each machine flies its own plane and decides when that
     plane is hit or has crashed (the victim names the shooter's seat). The
     bomber's machine decides building hits, sent as damage amounts so they
     add up. In Endless enemies each machine flies the flyer at its seat.
-  - **Ending.** Every machine decides the end itself from the same events
-    (outs, leaves, flags). Endless enemies waits for everyone's `fin` before
-    naming a winner, since state updates can lag a kill.
+  - **Ending.** Every machine sees the end coming from the same events
+    (outs, leaves, flags), then settles the result from everyone's `fin`
+    (score, out, flags seen fall), so two machines can't name different
+    winners. Losing your own connection ends the match with no result.
   - **What travels.** Other machines re-fire shots and bombs only for show.
     The message list is in `net/protocol.js`.
   - **Tests.** `net-dogfight`, `net-flag` and `net-endless` play matches
@@ -101,8 +105,14 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   flyer's own heading. The port gives `des` its own vector, and the
   harness makes the same one-line fix to the prototype's source as it
   loads it (`PROTO_FIXES` in `tests/harness.js`; `features/` is never
-  edited), so the equivalence suites still compare frame by frame. Any
-  future deliberate fix to the prototype's behaviour goes there too.
+  edited), so the equivalence suites still compare frame by frame. A
+  second fix there turns a flyer level towards a target behind it: the
+  shortest turn passed near straight down, and the ±0.7 pitch clamp held
+  it in a steep dive. Any future deliberate fix to the prototype's
+  behaviour goes there too.
+- **Aim down the sights** (`ADS` in `constants.js`; `aiming()` in
+  `flight.js`): Shift or Caps Lock in Free flight. Off, its factors are 1
+  and the view is untouched. Tested in `sights.test.js`.
 - **Enemy rounds.** These are drawn pointing the way they fly. In the
   prototype, `fire()` aliased `tv` and aimed the mesh wrongly; only the
   drawing changed.

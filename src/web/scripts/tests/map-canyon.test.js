@@ -23,7 +23,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadPort } from "./harness.js";
+import { loadPort, seededRandom } from "./harness.js";
 
 const game = await loadPort(5);
 const { w, duel } = game;
@@ -263,6 +263,9 @@ test("flak: a bomb silences a battery", () => {
 });
 
 test("the enemy flyers hunt down the gorge without flying into it", () => {
+  // Its own random numbers, so what it finds is not down to the tests
+  // before it.
+  Math.random = seededRandom(12);
   game.start("free");
   let seen = 0,
     rock = 0,

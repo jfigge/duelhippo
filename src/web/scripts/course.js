@@ -97,15 +97,44 @@ export const LIMITS = PERFECT.map((t) => Math.ceil(t * COURSE.slack));
 
 // ── The record ──────────────────────────────────────────────────────────────
 // {open: the highest level open (0: Easy only), best: [{n, s, z (the
-// level), t}] top ten}.
+// level), t}] top ten}. What storage holds is checked entry by entry: one
+// bad entry (an old build's, or a hand edit) would otherwise throw on every
+// course screen and every course ending.
+export function readRecord(raw) {
+  const levels = COURSE.levels.length;
+  let r = null;
+  try {
+    r = JSON.parse(raw);
+  } catch {
+    // Unreadable: a fresh record.
+  }
+  if (!r || typeof r !== "object") return { open: 0, best: [] };
+  const open = Number.isInteger(r.open)
+    ? Math.max(0, Math.min(levels - 1, r.open))
+    : 0;
+  const best = (Array.isArray(r.best) ? r.best : [])
+    .filter(
+      (e) =>
+        e &&
+        typeof e.n === "string" &&
+        Number.isFinite(e.s) &&
+        Number.isInteger(e.z) &&
+        e.z >= 0 &&
+        e.z < levels &&
+        (e.t === null || Number.isFinite(e.t)),
+    )
+    .map(({ n, s, z, t }) => ({ n, s, z, t }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 10);
+  return { open, best };
+}
 function load() {
   try {
-    const r = JSON.parse(window.localStorage.getItem(COURSE_KEY));
-    if (r && Number.isInteger(r.open) && Array.isArray(r.best)) return r;
+    return readRecord(window.localStorage.getItem(COURSE_KEY));
   } catch {
-    // Nothing saved, or unreadable: a fresh record.
+    // No storage: a fresh record.
+    return { open: 0, best: [] };
   }
-  return { open: 0, best: [] };
 }
 const record = load();
 function keep() {
@@ -129,22 +158,33 @@ export const run = {
 };
 
 const group = new THREE.Group();
-const meshes = [];
+// Each level's rings, built the first time it is flown and kept: one
+// geometry for them all, and a material each, since each ring is shaded on
+// its own.
+const LEVELS = [];
+let meshes = [];
 const COLOURS = { next: 0xffe66b, soon: 0x55ffff, later: 0xdedede };
-function draw() {
-  for (const m of meshes) m.removeFromParent();
-  meshes.length = 0;
+let ringGeo = null;
+function build(level) {
   const r = COURSE.r,
-    geo = new THREE.TorusGeometry(r, Math.max(0.9, r * 0.09), 8, 40);
-  for (const ring of COURSES[run.level]) {
+    g = new THREE.Group(),
+    up = new THREE.Vector3(0, 0, 1);
+  ringGeo ??= new THREE.TorusGeometry(r, Math.max(0.9, r * 0.09), 8, 40);
+  const ms = COURSES[level].map((ring) => {
     const m = new THREE.Mesh(
-      geo,
+      ringGeo,
       new THREE.MeshLambertMaterial({ color: COLOURS.later }),
     );
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ring.n);
-    put(group, m, ring.c.x, ring.c.y, ring.c.z);
-    meshes.push(m);
-  }
+    m.quaternion.setFromUnitVectors(up, ring.n);
+    return put(g, m, ring.c.x, ring.c.y, ring.c.z);
+  });
+  return { g, ms };
+}
+function draw() {
+  group.clear();
+  const lv = (LEVELS[run.level] ??= build(run.level));
+  group.add(lv.g);
+  meshes = lv.ms;
   shade();
 }
 // The next ring glows yellow, the one after cyan; flown ones are gone.
@@ -170,7 +210,6 @@ export function startCourse(level) {
   run.t = 0;
   run.score = 0;
   run.done = false;
-  run.out = false;
   draw();
   scene.add(group);
   last.copy(P.pos);
@@ -185,12 +224,12 @@ export function endCourse() {
 // right way, inside the hole). Returns "done" when the last ring is flown,
 // "out" when the time limit runs out first.
 const last = new THREE.Vector3(),
-  hit = new THREE.Vector3();
+  hit = new THREE.Vector3(),
+  rel = new THREE.Vector3();
 export function updCourse(dt) {
   if (!run.on || run.done) return false;
   if (run.next > 0) run.t += dt;
   if (run.t > LIMITS[run.level]) {
-    run.out = true;
     return "out";
   }
   P.fuel = 100; // the course is about flying, not fuel
@@ -199,7 +238,7 @@ export function updCourse(dt) {
     r = COURSE.r,
     { pts } = COURSE.levels[run.level];
   if (P.alive) {
-    const d0 = last.clone().sub(ring.c).dot(ring.n),
+    const d0 = rel.copy(last).sub(ring.c).dot(ring.n),
       d1 = hit.copy(P.pos).sub(ring.c).dot(ring.n);
     if (d0 < 0 && d1 >= 0) {
       hit.lerpVectors(last, P.pos, d0 / (d0 - d1));
@@ -231,8 +270,10 @@ function finish() {
 }
 
 // The flight's score into the table (top ten), and the next level opened
-// if this one was finished. Returns {rank (0-based, or -1), opened}.
+// if this one was finished. A flight that never reached the first ring is
+// not a run, however it ended. Returns {rank (0-based, or -1), opened}.
 export function recordCourse(initials) {
+  if (!run.next) return { rank: -1, opened: null };
   const entry = {
     n: initials || "???",
     s: run.score,
@@ -256,6 +297,9 @@ export function recordCourse(initials) {
   return { rank, opened };
 }
 
-// m:ss.s
-export const clock = (t) =>
-  `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
+// m:ss.s, rounded to the tenth before it is split, so 59.96 s is 1:00.0
+// rather than 0:60.0.
+export const clock = (t) => {
+  const d = Math.round(Math.max(0, t) * 10);
+  return `${Math.floor(d / 600)}:${((d % 600) / 10).toFixed(1).padStart(4, "0")}`;
+};

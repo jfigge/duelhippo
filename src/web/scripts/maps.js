@@ -17,8 +17,10 @@
  * with Duel Hippo. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// maps.js — the maps beyond the prototype's Countryside: the City and the
-// Sea (constants.js MAPS, CITY, SEA).
+// maps.js — the maps beyond the prototype's Countryside. The City and the
+// Sea are built here (constants.js CITY, SEA); the rest (constants.js MAPS:
+// Sky islands, Arctic, Canyon, Zeppelins, Night raid, Volcano, Storm) in
+// maps/, from the shared pieces in `kit` below.
 //
 // Each is built the first time it is picked, into a group that is shown
 // while it is the map in play, from its own seeded random numbers: never
@@ -26,8 +28,10 @@
 // the two runways (HOME and EB, changed in place), the solids, where the
 // hippos live, the town, the sky, and plugs the map's rules into world.js
 // `land`. On the Countryside every one of those is the prototype's.
+// startMap() is each game's fresh start for what a map moves or keeps
+// (a convoy, the weather), so every machine in a team game agrees.
 //
-// The trick both maps share: what stands on the ground counts as ground.
+// The trick all the maps share: what stands on the ground counts as ground.
 // A tower's roof or a flight deck is just higher ground to groundY, so
 // planes, rounds, bombs, missiles and shadows all meet it with no new code.
 
@@ -91,7 +95,10 @@ export const mapNow = () => current;
 //            where the hippos live ([x, z, y] each)
 //   sky, fog [near, far], below (the ground's light), light [hemisphere,
 //            sun] as shares of the Countryside's
-//   enter(), leave()   anything else to set up and put back
+//   enter(), leave()   anything else to set up and put back; enter() runs
+//            once the map's town stands
+//   start()  a new game on it: what it moves (convoy, airships) and keeps
+//            (weather, wind) starts afresh, from time since then
 export function useMap(id) {
   if (!MAPS[id]) id = "field";
   if (id === current) return;
@@ -117,8 +124,14 @@ export function useMap(id) {
   hemi.groundColor.setHex(m.below);
   hemi.intensity = LIGHT[0] * m.light[0];
   sun.intensity = LIGHT[1] * m.light[1];
-  m.enter?.();
   buildTargets();
+  m.enter?.();
+}
+
+// A new game on the map in play (game.js startGame, once its targets and
+// the player are placed).
+export function startMap() {
+  if (current !== "field") built[current]?.start?.();
 }
 
 // mulberry32: a small, good, seeded generator.
@@ -162,24 +175,74 @@ function dressing(into) {
 
 // Fire an enemy round from `from` at the player, leading them, if they are
 // within `range` (m) and alive and solid: a map's flak. Returns whether it
-// fired. `spread` is the aim's scatter (rad).
-const flakTv = new THREE.Vector3();
+// fired. `spread` is the aim's scatter (rad). Never past a round's reach
+// (weapons.js: 1.4 s at 480 m/s), less a little: a shot that cannot get
+// there is only noise, and a warning of nothing.
+const flakTv = new THREE.Vector3(),
+  REACH = 480 * 1.4 - 20;
 export function flakAt(from, range = 600, spread = 0.03) {
   if (!P.alive || P.ghost || game.state !== "play") return false;
   const d = from.distanceTo(P.pos);
   if (d > range) return false;
+  // Where it aims, leading the plane: that is where the round must reach.
   const v = 480,
     dir = flakTv
       .copy(P.pos)
       .addScaledVector(P.vel, d / v)
-      .sub(from)
-      .normalize();
+      .sub(from);
+  if (dir.length() > REACH) return false;
+  dir.normalize();
   dir.x += (Math.random() - 0.5) * spread * 2;
   dir.y += (Math.random() - 0.5) * spread * 2;
   dir.z += (Math.random() - 0.5) * spread * 2;
-  fire(from.clone(), dir.normalize().clone(), v, "e");
+  // fire() copies both, so a scratch vector will do.
+  fire(from, dir.normalize(), v, "e");
   sfx.egun(camera.position.distanceTo(from));
   return true;
+}
+
+// A target's real shape (world.js makeTarget's `hit`), from parts in its
+// own frame (built along x, its origin where it stands): boxes [x0, x1, y0,
+// y1, z0, z1], and a box with a seventh number narrows to a point at x1 (a
+// bow), at that height. `round(x, y, z, pad)`, if given, is any other part.
+// A point is turned into that frame by the target's heading, and a wreck's
+// squash (world.js wreck) is allowed for.
+export function shape(parts, round = null) {
+  return (t, p, pad = 0) => {
+    const a = t.g.rotation.y,
+      c = Math.cos(a),
+      s = Math.sin(a),
+      dx = p.x - t.x,
+      dz = p.z - t.z,
+      x = dx * c - dz * s,
+      z = dx * s + dz * c,
+      sy = t.g.scale.y || 1,
+      y = p.y - t.y;
+    for (let i = 0; i < parts.length; i++) {
+      const b = parts[i];
+      if (x < b[0] - pad || x > b[1] + pad) continue;
+      let y0 = b[2],
+        y1 = b[3],
+        z0 = b[4],
+        z1 = b[5];
+      if (b.length > 6) {
+        const f = Math.min(1, Math.max(0, (x - b[0]) / (b[1] - b[0]))),
+          zc = (z0 + z1) / 2;
+        y0 += (b[6] - y0) * f;
+        y1 += (b[6] - y1) * f;
+        z0 += (zc - z0) * f;
+        z1 += (zc - z1) * f;
+      }
+      if (
+        y > y0 * sy - pad &&
+        y < y1 * sy + pad &&
+        z > z0 - pad &&
+        z < z1 + pad
+      )
+        return true;
+    }
+    return round ? round(x, y / sy, z, pad) : false;
+  };
 }
 
 // What every map's builder is given (maps/*.js): the shared pieces.
@@ -195,6 +258,7 @@ export const kit = {
   runway,
   hangar,
   flakAt,
+  shape,
   scene,
   camera,
   sfx,
@@ -218,39 +282,149 @@ const BUILD = { city, sea, ...MORE };
 // A flyer about to fly into something (a tower, a mountain) turns for the
 // clearest way round it, the one nearest where it was going. Under a
 // ceiling none climbs into the cloud; without one, a flyer also climbs to
-// get over. `to` is where it wants to go (ai.js), changed in place.
-const TURNS = [0.5, -0.5, 1, -1, 1.6, -1.6, 2.4, -2.4];
-function avoider(height, ceil) {
-  const ahead = (pos, dx, dz) => {
-    for (let s = 30; s <= 240; s += 30)
-      if (height(pos.x + dx * s, pos.z + dz * s) > pos.y - 25) return s;
-    return 0;
+// get over. `to` is where it wants to go (ai.js), changed in place. `top`,
+// if given, is the highest the ground reaches: a flyer well above it has
+// nothing to look out for. `wide` (m), if given, is room kept either side
+// of its path, and it will not turn back into what it is going round while
+// the way it wants to go is still blocked: for something long that a flyer
+// closes on at a shallow angle (an airship's hull), which a single line
+// ahead sees too late. It runs for every flyer every frame, so it
+// allocates nothing.
+const TURNS = [0.5, -0.5, 1, -1, 1.6, -1.6, 2.4, -2.4],
+  TURN_C = TURNS.map(Math.cos),
+  TURN_S = TURNS.map(Math.sin);
+function avoider(height, ceil, top = Infinity, wide = 0, boxes = null) {
+  // How far along a probe (from x, y, z, d m a metre along x and z, r up)
+  // it meets one of `boxes` ([x0, x1, y0, y1, z0, z1], grown 25 m up and
+  // down as the ground is): exactly, where the probe's steps could pass
+  // between two samples across a thin hull. 0 if it doesn't within 240 m.
+  const boxed = (x, y, z, dx, dz, r) => {
+    let best = 0;
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      let lo = 0,
+        hi = 240;
+      for (let a = 0; a < 3; a++) {
+        const p = a === 0 ? x : a === 1 ? y : z,
+          d = a === 0 ? dx : a === 1 ? r : dz,
+          m0 = a === 1 ? b[2] - 25 : b[a * 2],
+          m1 = a === 1 ? b[3] + 25 : b[a * 2 + 1];
+        if (Math.abs(d) < 1e-9) {
+          if (p < m0 || p > m1) lo = Infinity;
+          continue;
+        }
+        const t0 = (m0 - p) / d,
+          t1 = (m1 - p) / d;
+        lo = Math.max(lo, Math.min(t0, t1));
+        hi = Math.min(hi, Math.max(t0, t1));
+      }
+      if (lo <= hi && (!best || lo < best)) best = Math.max(lo, 1);
+    }
+    return best;
+  };
+  // How far along (dx, dz), `o` m to its left, the ground rises into the
+  // way; 0 if it doesn't within 240 m. Careful (`wide`), it asks about the
+  // height the flyer will be at there, from `y0` climbing or diving `r` m a
+  // metre, and 25 m above that, so open air under a hull is open.
+  const line = (pos, dx, dz, o, r, y0 = pos.y) => {
+    const x = pos.x - dz * o,
+      z = pos.z + dx * o,
+      b = boxes ? boxed(x, y0, z, dx, dz, r) : 0;
+    for (let s = 30; s <= 240; s += 30) {
+      if (b && b <= s) return b;
+      const y = y0 + r * s;
+      if (height(x + dx * s, z + dz * s, wide ? y + 25 : Infinity) > y - 25)
+        return s;
+    }
+    return b;
+  };
+  // The nearest of the lines along (dx, dz): the middle one, and careful,
+  // those either side, each at both slopes (r1, r2: the flyer's climb now
+  // and the one it wants), from height y0.
+  const ahead = (pos, dx, dz, r1, r2, y0 = pos.y) => {
+    let n = 0;
+    for (let i = 0; i < (wide ? 6 : 1); i++) {
+      const o = i < 2 ? 0 : i < 4 ? wide : -wide,
+        m = line(pos, dx, dz, o, i & 1 ? r2 : r1, y0);
+      if (m && (!n || m < n)) n = m;
+    }
+    return n;
   };
   return (pos, f, to) => {
     const l = Math.hypot(f.x, f.z) || 1,
       fx = f.x / l,
-      fz = f.z / l;
-    if (ahead(pos, fx, fz)) {
-      const tl = Math.hypot(to.x, to.z) || 1;
-      let best = null,
-        score = -Infinity;
-      for (const a of TURNS) {
-        const c = Math.cos(a),
-          s = Math.sin(a),
+      fz = f.z / l,
+      tl = Math.hypot(to.x, to.z) || 1,
+      rNow = wide ? f.y / l : 0,
+      rWant = wide ? Math.max(-0.7, Math.min(0.7, to.y / tl)) : 0,
+      low = pos.y - 25 + Math.min(0, rNow * 240, rWant * 240) < top,
+      now = low ? ahead(pos, fx, fz, rNow, rWant) : 0,
+      // Careful, the way it wants to go too, at the climb it wants.
+      want =
+        !now && wide && low
+          ? ahead(pos, to.x / tl, to.z / tl, rWant, rWant)
+          : 0;
+    // Careful: if the way that is blocked is clear 40 m lower, level, what
+    // blocks it can be flown under (a hull, from beside its keel): it holds
+    // that way, and dives.
+    if (now || want) {
+      const ux = now ? fx : to.x / tl,
+        uz = now ? fz : to.z / tl;
+      // Only an obstacle at the flyer's own height counts: a probe that
+      // meets the street on its way down is no hull to dive under.
+      if (
+        wide &&
+        ahead(pos, ux, uz, 0, 0) &&
+        !ahead(pos, ux, uz, 0, 0, pos.y - 40)
+      ) {
+        const L = Math.max(200, tl);
+        to.set(ux * L, Math.min(to.y, -L * 0.4), uz * L);
+        return;
+      }
+    }
+    if (now || want) {
+      let bx = fx,
+        bz = fz,
+        score = -Infinity,
+        // The nearest thing a turn to each side sweeps across on its way.
+        // (Straight ahead is on neither side: it vetoes neither turn.)
+        nearL = Infinity,
+        nearR = Infinity,
+        near = now || Infinity;
+      // Straight on (if it is clear: the way it wants is what is blocked),
+      // then each turn, smallest first each side.
+      for (let k = wide ? -1 : 0; k < TURNS.length; k++) {
+        const c = k < 0 ? 1 : TURN_C[k],
+          s = k < 0 ? 0 : TURN_S[k],
           dx = fx * c - fz * s,
           dz = fx * s + fz * c,
-          hit = ahead(pos, dx, dz),
-          v = hit ? hit / 1000 : 1 + (dx * to.x + dz * to.z) / tl;
+          hit = ahead(pos, dx, dz, rNow, rWant);
+        let v = hit ? hit / 1000 : 1 + (dx * to.x + dz * to.z) / tl;
+        if (wide && k >= 0) {
+          // Careful: a clear way that is reached without sweeping across
+          // anything close comes first, so a flyer turns away from a hull
+          // beside it rather than through it.
+          const swept = s > 0 ? nearL : nearR;
+          if (!hit && swept > 120) v += 3;
+          if (hit) {
+            if (s > 0) nearL = Math.min(nearL, hit);
+            else nearR = Math.min(nearR, hit);
+            near = Math.min(near, hit);
+          }
+        }
         if (v > score) {
           score = v;
-          best = [dx, dz];
+          bx = dx;
+          bz = dz;
         }
       }
-      const L = Math.max(200, tl);
+      const L = Math.max(200, tl),
+        // Close, with no clear way: over it, hard.
+        climb = wide && near < 90 && score < 1 ? 1.2 : 0.4;
       to.set(
-        best[0] * L,
-        ceil ? Math.min(to.y, 0) : Math.max(to.y, L * 0.4),
-        best[1] * L,
+        bx * L,
+        ceil ? Math.min(to.y, 0) : Math.max(to.y, L * climb),
+        bz * L,
       );
     }
     if (ceil && pos.y > ceil - 70)
@@ -337,9 +511,15 @@ function city() {
         const w = n === 1 ? rnd(80, 120) : rnd(50, 64),
           d = n === 1 ? rnd(70, 120) : rnd(50, 64),
           tall = rand() < 0.75 - dist * 0.4,
-          h = tall
-            ? rnd(180, 460) * Math.max(0.6, 1.1 - dist * 0.5)
-            : rnd(40, 110);
+          // Round the enemy field, where its flyers patrol a 420 m ring at
+          // 180 m, the towers stay low enough for them to pass over.
+          ring = Math.abs(x + sx - enemy.x) < 560 && Math.abs(z + sz) < 560,
+          h = Math.min(
+            ring ? 140 : Infinity,
+            tall
+              ? rnd(180, 460) * Math.max(0.6, 1.1 - dist * 0.5)
+              : rnd(40, 110),
+          );
         const t = {
           x: x + sx,
           z: z + sz,
@@ -461,24 +641,34 @@ function city() {
 
   // Streets are narrow for a plane, so City flyers turn twice as hard
   // (`agile`).
-  const avoid = avoider(height, ceil);
+  const avoid = avoider(height, ceil, Infinity, 10);
 
   // A team game: room cleared round each team's field (whole blocks of
-  // towers put away), a park, its runway and its hangar.
+  // towers put away), a park, its runway and its hangar. The ground (`gone`)
+  // changes at once; the towers are drawn again once, when the game starts
+  // (or its first frame), not once a field: that is half a second for eight.
+  let stale = false;
   function field(f, c) {
     for (const t of towers)
       if (Math.abs(t.x - f.x) < f.hl + 260 && Math.abs(t.z - f.z) < 260)
-        t.gone = true;
-    drawTowers();
+        t.gone = stale = true;
     put(f.g, flat(f.hl * 2 + 400, 460, 0x6ea648, -3), 0, 0.12, 0);
     runway({ x: 0, z: 0, hl: f.hl, hw: f.hw }, c.plane[2], f.g);
     hangar(-120, -70, c.plane[1], false, f.g);
     return [{ x: f.x - 120, z: f.z - 70, r: 17, h: 12.5 }];
   }
+  function settle() {
+    if (!stale) return;
+    stale = false;
+    drawTowers();
+  }
+  // The fields gone: the ground at once, the towers drawn when the map is
+  // next shown or played (enter, start), which a rematch's new fields may
+  // change again first.
   function unfield() {
     if (!towers.some((t) => t.gone)) return;
     for (const t of towers) t.gone = false;
-    drawTowers();
+    stale = true;
   }
 
   return {
@@ -498,7 +688,10 @@ function city() {
       town: TDEF,
       field,
       unfield,
+      tick: settle,
     },
+    enter: settle,
+    start: settle,
     home,
     enemy,
     solids: COUNTRY_SOLIDS,
@@ -587,24 +780,48 @@ const BIG = [
 ];
 for (const b of BIG)
   b.reach = Math.max(...b.peaks.map(([dx, dz, r]) => Math.hypot(dx, dz) + r));
+// The ground's height runs many times a frame (every flyer looks ahead
+// along eight lines), so these are plain loops that allocate nothing.
+//
 // A big island's ground: the highest of its peaks' smooth cones, less a
 // little, so the coast is a gentle beach; 0 is the sea.
 function bigHeight(b, x, z) {
   let h = 0;
-  for (const [dx, dz, r, top] of b.peaks) {
-    const f = 1 - Math.hypot(x - b.x - dx, z - b.z - dz) / r;
-    if (f > 0) h = Math.max(h, top * f * f * (3 - 2 * f));
+  for (let i = 0; i < b.peaks.length; i++) {
+    const k = b.peaks[i],
+      f = 1 - Math.hypot(x - b.x - k[0], z - b.z - k[1]) / k[2];
+    if (f > 0) h = Math.max(h, k[3] * f * f * (3 - 2 * f));
   }
   return Math.max(0, h - 2);
 }
-const bigAt = (x, z) =>
-  BIG.find(
-    (b) =>
+// The big island whose ground (x, z) is, or null; and that ground.
+function bigAt(x, z) {
+  for (let i = 0; i < BIG.length; i++) {
+    const b = BIG[i];
+    if (
       Math.abs(x - b.x) < b.reach &&
       Math.abs(z - b.z) < b.reach &&
-      bigHeight(b, x, z) > 0,
-  );
+      bigHeight(b, x, z) > 0
+    )
+      return b;
+  }
+  return null;
+}
+function bigGround(x, z) {
+  for (let i = 0; i < BIG.length; i++) {
+    const b = BIG[i];
+    if (Math.abs(x - b.x) < b.reach && Math.abs(z - b.z) < b.reach) {
+      const h = bigHeight(b, x, z);
+      if (h > 0) return h;
+    }
+  }
+  return 0;
+}
 
+// The small islands, [x, z, r]: a sand bar, a frustum of 9 sides from r at
+// its foot (y −2.5) to 0.75 r on top (y 3.5), and on it a hill of 7 sides,
+// 0.6 r across its foot to 0.15 r on top, 0.35 r high: the meshes sea()
+// draws, so the ground is where they are.
 const ISLES = [
   [1050, 380, 90],
   [520, -620, 60],
@@ -612,6 +829,49 @@ const ISLES = [
   [3700, -900, 80],
   [-700, 600, 70],
 ];
+const SAND = { top: 3.5, foot: -2.5, sides: 9, hill: 7 },
+  // Where the sand's slope meets the water, as a share of r.
+  SHORE = 0.75 + 0.25 * (SAND.top / (SAND.top - SAND.foot));
+// How far (dx, dz) is from the axis of a CylinderGeometry of `n` sides,
+// scaled so its sides are at their corners' radius: a polygon's own
+// distance, which a circle's would overstate between the corners. Three
+// puts corner k at atan2(x, z) = 2πk/n.
+function sideDist(dx, dz, n) {
+  const e = Math.hypot(dx, dz);
+  if (!e) return 0;
+  const k = (2 * PI) / n,
+    a = Math.atan2(dx, dz),
+    off = a - k * (Math.floor(a / k) + 0.5);
+  return (e * Math.cos(off)) / Math.cos(PI / n);
+}
+// The island under (x, z), or null.
+function isleAt(x, z) {
+  for (let i = 0; i < ISLES.length; i++) {
+    const I = ISLES[i],
+      dx = x - I[0],
+      dz = z - I[1];
+    if (
+      Math.abs(dx) < I[2] &&
+      Math.abs(dz) < I[2] &&
+      sideDist(dx, dz, SAND.sides) < I[2] * SHORE
+    )
+      return I;
+  }
+  return null;
+}
+function isleGround(I, x, z) {
+  const dx = x - I[0],
+    dz = z - I[1],
+    r = I[2],
+    s = sideDist(dx, dz, SAND.sides) / r;
+  if (s > 0.75)
+    return Math.max(0, SAND.top - ((SAND.top - SAND.foot) * (s - 0.75)) / 0.25);
+  if (Math.hypot(dx, dz) >= r * 0.6) return SAND.top;
+  const u = sideDist(dx, dz, SAND.hill) / r;
+  return u >= 0.6
+    ? SAND.top
+    : SAND.top + r * 0.35 * Math.min(1, (0.6 - u) / 0.45);
+}
 // The fleet, where the Countryside's town stands: [kind, x, side, z].
 const FLEET = [
   ["destroyer", 850, null, -40],
@@ -702,6 +962,43 @@ function foam(w, d) {
   return m;
 }
 
+// The ships' shapes, as they are built below: a destroyer's bow runs out
+// to 53 m and its stern to 40, a cargo ship's hull to 45, past their r.
+const SHAPE = {
+  destroyer: shape([
+    [-40, 40, -2, 6, -6, 6],
+    [40, 53, -5.2, 5.6, -5.2, 5.2, 2],
+    [-9, 13, 6, 12, -4.5, 4.5],
+    [1.5, 10.5, 12, 16, -3.5, 3.5],
+    [0.5, 11.5, 16, 17, -4, 4],
+    [-14.3, -9.7, 7.5, 16.5, -2.3, 2.3],
+    [25.5, 30.5, 6, 9, -2.5, 2.5],
+    [-32.5, -27.5, 6, 9, -2.5, 2.5],
+    [29, 37, 7.6, 8.4, -0.4, 0.4],
+    [-39, -31, 7.6, 8.4, -0.4, 0.4],
+    [3.6, 4.4, 17, 27, -0.4, 0.4],
+  ]),
+  cargo: shape([
+    [-45, 45, -2, 8, -10, 10],
+    [-43, -29, 8, 22, -9, 9],
+    [-44, -28, 22, 23, -10, 10],
+    // the stacks of containers, one to three high
+    ...Array.from({ length: 15 }, (_, k) => {
+      const i = (k / 3) | 0,
+        j = k % 3,
+        x = -18 + i * 12.5,
+        z = -6.5 + j * 6.5;
+      return [x - 5.5, x + 5.5, 8, 11.2 + ((i + j) % 3) * 3.3, z - 3, z + 3];
+    }),
+  ]),
+  patrol: shape([
+    [-14, 14, -1, 3, -3.5, 3.5],
+    [-6, 2, 3, 7, -2.5, 2.5],
+    [-6.5, 2.5, 7, 7.6, -3, 3],
+    [7.5, 10.5, 3, 5, -1.5, 1.5],
+  ]),
+};
+
 // The fleet's ships, as targets (world.js makeTarget): each builds into `g`,
 // along x, and gives its numbers. Magenta marks them as the enemy's.
 const SHIPS = {
@@ -730,7 +1027,14 @@ const SHIPS = {
     put(g, box(0.8, 10, 0.8, 0xdedede), 4, 22, 0);
     put(g, box(4, 2.4, 0.12, 0xff55ff), 6, 25.5, 0);
     g.add(foam(96, 20));
-    return { r: 28, h: 14, hp: 8, pts: 250, name: "Destroyer" };
+    return {
+      r: 28,
+      h: 14,
+      hp: 8,
+      pts: 250,
+      name: "Destroyer",
+      hit: SHAPE.destroyer,
+    };
   },
   cargo(g) {
     put(g, box(90, 10, 20, 0x2e4a6b), 0, 3, 0);
@@ -750,7 +1054,14 @@ const SHIPS = {
             -6.5 + j * 6.5,
           );
     g.add(foam(104, 28));
-    return { r: 32, h: 14, hp: 6, pts: 200, name: "Cargo ship" };
+    return {
+      r: 32,
+      h: 14,
+      hp: 6,
+      pts: 200,
+      name: "Cargo ship",
+      hit: SHAPE.cargo,
+    };
   },
   patrol(g) {
     put(g, box(28, 4, 7, 0x8a8e96), 0, 1, 0);
@@ -758,7 +1069,14 @@ const SHIPS = {
     put(g, box(9, 0.6, 6, 0xb03aa0), -2, 7.3, 0);
     put(g, box(3, 2, 3, 0x5a5e66), 9, 4, 0);
     g.add(foam(38, 12));
-    return { r: 13, h: 7.5, hp: 3, pts: 100, name: "Patrol boat" };
+    return {
+      r: 13,
+      h: 7.5,
+      hp: 3,
+      pts: 100,
+      name: "Patrol boat",
+      hit: SHAPE.patrol,
+    };
   },
 };
 
@@ -779,26 +1097,27 @@ function sea() {
   ])
     put(group, carrier(trim, roof), R.x, 0, R.z);
 
-  // Islands: a sand bar, a green hill, palms.
+  // Islands: a sand bar, a green hill (as ISLES has them), palms.
   for (const [x, z, r] of ISLES) {
+    const { top, foot, sides, hill } = SAND;
     put(
       group,
       new THREE.Mesh(
-        new THREE.CylinderGeometry(r * 0.75, r, 6, 9),
+        new THREE.CylinderGeometry(r * 0.75, r, top - foot, sides),
         M(0xe3cf8f),
       ),
       x,
-      0.5,
+      (top + foot) / 2,
       z,
     );
     put(
       group,
       new THREE.Mesh(
-        new THREE.CylinderGeometry(r * 0.15, r * 0.6, r * 0.35, 7),
+        new THREE.CylinderGeometry(r * 0.15, r * 0.6, r * 0.35, hill),
         M(0x5f9a40),
       ),
       x,
-      3.5 + r * 0.175,
+      top + r * 0.175,
       z,
     );
     for (let i = 0; i < Math.round(r / 12); i++) {
@@ -889,34 +1208,31 @@ function sea() {
   // The ground: a deck (and its island) is solid down to the water; a small
   // island is a sand bar with a hill on it; a large one, its peaks.
   function onDeck(x, z) {
-    for (const d of decks)
+    for (let i = 0; i < decks.length; i++) {
+      const d = decks[i];
       if (Math.abs(x - d.x) < SEA.hl && Math.abs(z - d.z) < SEA.hw) return d;
+    }
     return null;
   }
-  const isle = (x, z) =>
-    ISLES.find(([ix, iz, r]) => Math.hypot(x - ix, z - iz) < r);
   function height(x, z) {
     const d = onDeck(x, z);
-    if (d) {
-      const [ix, iz, hx, hz, ih] = ISLAND;
-      return Math.abs(x - d.x - ix) < hx && Math.abs(z - d.z - iz) < hz
-        ? SEA.deck + ih
+    if (d)
+      return Math.abs(x - d.x - ISLAND[0]) < ISLAND[2] &&
+        Math.abs(z - d.z - ISLAND[1]) < ISLAND[3]
+        ? SEA.deck + ISLAND[4]
         : SEA.deck;
-    }
-    const i = isle(x, z);
-    if (!i) {
-      const b = bigAt(x, z);
-      return b ? bigHeight(b, x, z) : 0;
-    }
-    const [ix, iz, r] = i,
-      e = Math.hypot(x - ix, z - iz);
-    return e > r * 0.6
-      ? 3.5
-      : 3.5 + r * 0.35 * Math.min(1, (r * 0.6 - e) / (r * 0.45));
+    const I = isleAt(x, z);
+    return I ? isleGround(I, x, z) : bigGround(x, z);
   }
+  // The highest any of it reaches: a flyer well above that steers freely.
+  const top = Math.max(
+    SEA.deck + ISLAND[4],
+    ...ISLES.map(([, , r]) => SAND.top + r * 0.35),
+    ...BIG.map((b) => Math.max(...b.peaks.map((k) => k[3]))),
+  );
   function crash(p) {
     if (onDeck(p.x, p.z)) return "Flew into the carrier";
-    if (isle(p.x, p.z) || bigAt(p.x, p.z)) return "Flew into an island";
+    if (isleAt(p.x, p.z) || bigAt(p.x, p.z)) return "Flew into an island";
     return "Ditched in the sea";
   }
 
@@ -935,9 +1251,8 @@ function sea() {
       height,
       floor: () => 0,
       crash,
-      avoid: avoider(height, 0),
+      avoid: avoider(height, 0, top),
       brake: SEA.brake,
-      deck: true,
       dust: FOAM,
       town: FLEET,
       kinds: SHIPS,

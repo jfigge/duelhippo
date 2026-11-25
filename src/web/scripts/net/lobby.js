@@ -22,10 +22,11 @@
 //
 // Whoever makes the room gets a code to give their friends; up to eight more
 // type it in. There is no host in the game itself, but someone has to set it
-// up: the organiser, who is whoever has the lowest seat in the room (so if
-// they leave, the next one takes over). The organiser picks the team layout,
-// the game, the map and friendly fire, and keeps the roster of who is on which team;
-// everyone else asks to change team, and sees the organiser's setup. Every
+// up: the organiser, who is whoever has been in the room longest (so if
+// they leave, the next to have come takes over, and a newcomer never does).
+// The organiser picks the team layout, the game, the map and friendly fire,
+// and keeps the roster of who is on which team; everyone else asks to
+// change team, and sees the organiser's setup. Every
 // player says hello to every other with their protocol version, hash and
 // name, and the hashes of everyone on the roster name the group's scoreboard
 // (scores.js), whose copies are swapped and merged as the roster settles.
@@ -37,7 +38,7 @@ import { Mesh } from "./link.js";
 import { PROTO } from "./protocol.js";
 import { MAPS } from "../constants.js";
 import { mapOpen } from "../state.js";
-import { matchMessage, peerLeft } from "./match.js";
+import { matchMessage, peerLeft, abandonMatch, settleNow } from "./match.js";
 import {
   LAYOUTS,
   layout,
@@ -57,22 +58,49 @@ import {
   groupId,
   groupBoard,
   mergeGroup,
+  BOARD_MODES,
   isHash,
   newMatchId,
   isMatchId,
 } from "../scores.js";
 import { renderGroup } from "../scoreboard.js";
 
-const LOBBY = new Set(["hi", "setup", "team", "board", "go", "bad", "bye"]);
+const LOBBY = new Set([
+  "hi",
+  "setup",
+  "team",
+  "board",
+  "bq",
+  "go",
+  "bad",
+  "bye",
+]);
 const COUNT_FROM = 3;
 
-let act = null; // { startMatch, toTitle, speed, map }, from game.js
+let act = null; // { startMatch, toTitle, speed, map, rosterChanged }, game.js
 let link = null;
 let playing = false;
 let counting = false;
+let connecting = false; // a room being made or joined: one at a time
+let tries = 0; // counts attempts, so one given up on (Back) is dropped
 const people = new Map(); // seat → {h, n}: everyone who has said hello
 let setup = blank();
 let shownGroup = null;
+let rosterKey = ""; // the roster and organiser game.js last heard of
+let quiet = false;
+let lastOrganiser = null; // the organiser refresh() last saw
+// seat → the last setup from someone not (yet, here) the organiser. A new
+// organiser's first setup can arrive before the news that the old one has
+// gone; it is used once that news comes.
+const early = new Map();
+// The organiser's latest setup while this machine was still in a match
+// (and so not taking setups): applied when the match is over here.
+let afterMatch = null;
+// The match the countdown is for, fixed at its "go": seat, team and hello
+// of each player, so a leave racing the countdown's end cannot give two
+// machines different rosters (begin()).
+let lineUp = [];
+let countdowns = 0; // numbers each countdown, so an abandoned one stops
 
 function blank() {
   return {
@@ -159,32 +187,46 @@ export function openLobby() {
 }
 
 // ── Making and joining a room ───────────────────────────────────────────────
-async function host() {
-  status("Making a room…");
-  try {
-    connected(await Mesh.open(serverUrl(), null, opts()));
-  } catch (err) {
-    return failed(err);
-  }
-  status("Give your friends this code. Up to nine can play.");
-}
+const host = () =>
+  connect(
+    null,
+    "Making a room…",
+    "Give your friends this code. Up to nine can play.",
+  );
 
-async function join() {
+function join() {
   const code = $("onCode").value.trim().toUpperCase();
   if (code.length !== 4) return status("Room codes are four letters.", true);
-  status("Joining " + code + "…");
+  return connect(code, "Joining " + code + "…", "Connecting to the others…");
+}
+
+// A second click (or Enter) while the first is still connecting would open
+// a second seat for the same player.
+async function connect(code, doing, done) {
+  if (connecting || link) return;
+  connecting = true;
+  const mine = ++tries;
+  status(doing);
+  let m;
   try {
-    connected(await Mesh.open(serverUrl(), code, opts()));
+    m = await Mesh.open(serverUrl(), code, opts());
   } catch (err) {
-    return failed(err);
+    if (mine === tries) failed(err);
+    return;
+  } finally {
+    if (mine === tries) connecting = false;
   }
-  status("Connecting to the others…");
+  // Given up on (Back) while it connected.
+  if (mine !== tries) return m.close();
+  connected(m);
+  status(done);
 }
 
 // ?relay in the address forces the server relay, to test it.
 const opts = () => ({ relayOnly: /[?&]relay\b/.test(window.location.search) });
 
 function connected(m) {
+  if (link && link !== m) link.close();
   link = net.link = m;
   net.seat = m.seat;
   people.clear();
@@ -195,17 +237,23 @@ function connected(m) {
   setup.map = act.map();
   setup.roster = [{ seat: m.seat, team: 0 }];
   shownGroup = null;
-  m.onmessage = (msg, from) =>
-    LOBBY.has(msg.t) ? lobbyMessage(msg, from) : matchMessage(msg, from);
+  rosterKey = "";
+  lastOrganiser = null;
+  early.clear();
+  afterMatch = null;
+  m.onmessage = (msg, from, n) =>
+    LOBBY.has(msg.t) ? lobbyMessage(msg, from) : matchMessage(msg, from, n);
   m.onpeer = (seat) =>
     m.send({ t: "hi", v: PROTO, ...whoAmI() }, false, [seat]);
-  m.onpath = () => refresh();
+  m.onpath = (seat) => {
+    // Boards sent while the path was still being found may not have
+    // arrived; merging is idempotent, so they go again once it is.
+    if (!playing) sendBoard([seat]);
+    refresh();
+  };
   m.onleft = (seat) => gone(seat);
   m.onclose = (why) => {
-    if (playing) for (const s of people.keys()) if (s !== net.seat) peerLeft(s);
-    status(why, true);
-    show("onMenu");
-    link = net.link = null;
+    if (link === m) dropped(why);
   };
   show("onRoom");
   $("onCodeShow").textContent = m.code;
@@ -214,13 +262,60 @@ function connected(m) {
 }
 
 const whoAmI = () => ({ h: playerHash(), n: matchName() });
-const organiser = () => Math.min(link.seat, ...(link ? link.peers.keys() : []));
-const amOrganiser = () => !!link && organiser() === link.seat;
+const organiser = () => link.organiser;
+export const amOrganiser = () => !!link && organiser() === link.seat;
+
+// Our own connection to the server is gone. A match on now ends here with
+// no result and nothing filed: losing the connection is nobody's win, and
+// the others, whose server tells them we left, play on without us.
+function dropped(why) {
+  const inMatch = net.on;
+  link = net.link = null;
+  playing = counting = false;
+  people.clear();
+  net.me = net.group = net.match = null;
+  if (inMatch) {
+    abandonMatch();
+    act.toTitle();
+    openLobby();
+  } else show("onMenu");
+  status(why, true);
+}
+
+// Out of the room by our own choice (a different version, a map this build
+// lacks, a match already on): back to the Team game menu, saying why. A
+// setup kept from a match can do this as the match ends, with the over card
+// up: that match is left as dropped() leaves one, a moment later, since
+// game.js shows the card again once matchEnded() has returned.
+function quitRoom(why) {
+  if (link) link.close();
+  link = net.link = null;
+  playing = counting = false;
+  people.clear();
+  if (!net.on) {
+    show("onMenu");
+    return status(why, true);
+  }
+  net.me = net.group = net.match = null;
+  window.setTimeout(() => {
+    if (link || !net.on) return; // already left, or in a new room
+    abandonMatch();
+    act.toTitle();
+    openLobby();
+    status(why, true);
+  }, 0);
+}
 
 function gone(seat) {
   people.delete(seat);
-  if (playing) return peerLeft(seat);
-  if (amOrganiser()) {
+  // match.js ignores anyone who is not in the match; after it, a seat that
+  // leaves before its final score is not waited for.
+  if (net.on) peerLeft(seat);
+  early.delete(seat);
+  if (playing) return;
+  // In the countdown the roster stands as sent with "go"; begin() leaves
+  // out whoever has gone.
+  if (amOrganiser() && !counting) {
     setup.roster = setup.roster.filter((p) => p.seat !== seat);
     publish();
   }
@@ -231,17 +326,7 @@ function gone(seat) {
 function lobbyMessage(m, from) {
   switch (m.t) {
     case "hi":
-      if (m.v !== PROTO) {
-        link.send(
-          {
-            t: "bad",
-            text: "Someone here has a different version of Duel Hippo. Update to play.",
-          },
-          false,
-          [from],
-        );
-        return status("A player has a different version of Duel Hippo.", true);
-      }
+      if (m.v !== PROTO) return otherVersion(from);
       people.set(from, {
         h: isHash(m.h) ? m.h : null,
         n: cleanName(m.n) || "Pilot",
@@ -249,7 +334,10 @@ function lobbyMessage(m, from) {
       if (amOrganiser()) {
         if (playing || counting)
           link.send(
-            { t: "bad", text: "That game has already started." },
+            {
+              t: "bad",
+              text: "That game has already started. Try again when it's over.",
+            },
             false,
             [from],
           );
@@ -263,37 +351,97 @@ function lobbyMessage(m, from) {
       }
       return refresh();
     case "setup":
-      if (from !== organiser() || m.v !== PROTO || playing || counting) return;
-      setup = cleanSetup(m);
-      return refresh();
+      if (m.v !== PROTO || counting) return;
+      if (from !== organiser()) return void early.set(from, m);
+      if (playing) return void (afterMatch = m);
+      early.clear();
+      if (takeSetup(m)) refresh();
+      return;
     case "team":
       if (!amOrganiser() || playing || counting) return;
       return moveTo(from, m.team);
+    // Someone has just worked the group out, and missed the copies sent
+    // before they had.
+    case "bq":
+      if (shownGroup && m.g === shownGroup.id) sendBoard([from]);
+      return;
     case "board":
-      if (shownGroup && m.g === shownGroup.id) {
-        mergeGroup(shownGroup.id, shownGroup.members, m);
+      if (
+        shownGroup &&
+        m.g === shownGroup.id &&
+        BOARD_MODES.includes(m.mode) &&
+        Array.isArray(m.list)
+      ) {
+        mergeGroup(shownGroup.id, shownGroup.members, { [m.mode]: m.list });
         showBoard();
       }
       return;
     case "go":
-      if (from !== organiser() || playing || counting) return;
+      if (from !== organiser() || counting) return;
+      // A rematch while this machine is still waiting for the last match's
+      // final scores (the organiser has had them all): the last match is
+      // settled now with what has been heard, or this player would miss the
+      // next one and, never out of it, hold it up for everyone.
+      if (playing) {
+        settleNow();
+        matchEnded();
+        if (!link) return; // its setup was one this build cannot play
+      }
+      // A roster without us (the organiser started before our hello reached
+      // it): no match for us; the organiser's "bad" or next setup follows.
+      if (!setup.roster.some((p) => p.seat === link.seat && p.team >= 0))
+        return;
       net.match = isMatchId(m.id) ? m.id : null;
       return countdown();
+    // Only the organiser turns anyone away, so a newcomer on another build
+    // cannot send everyone else home.
     case "bad":
-      status(m.text, true);
-      if (!playing) {
-        link.close();
-        link = net.link = null;
-        show("onMenu");
-      }
-      return;
+      if (from !== organiser() || amOrganiser() || playing || counting) return;
+      return quitRoom(String(m.text ?? "").slice(0, 200));
     case "bye":
       return gone(from);
   }
 }
 
-// What the organiser sent, checked.
+// A hello from a different version of the game. Whoever came last goes: a
+// newcomer that finds the room on another version leaves on its own, and
+// the organiser tells one that comes to ours why (an older build leaves on
+// that). Everyone else just leaves them out.
+function otherVersion(from) {
+  if (link.order.indexOf(from) < link.order.indexOf(link.seat)) {
+    return quitRoom(
+      "This game is on a different version of Duel Hippo. Update to play.",
+    );
+  }
+  if (amOrganiser())
+    link.send(
+      {
+        t: "bad",
+        text: "Someone here has a different version of Duel Hippo. Update to play.",
+      },
+      false,
+      [from],
+    );
+}
+
+// The organiser's setup, made ours; false (and out of the room) for one this
+// build cannot play.
+function takeSetup(m) {
+  const next = cleanSetup(m);
+  if (!next) {
+    quitRoom(
+      "The organiser picked a map this version of Duel Hippo doesn't have. Update to play.",
+    );
+    return false;
+  }
+  setup = next;
+  return true;
+}
+
+// What the organiser sent, checked; null for a map this build lacks, which
+// would build a different world here.
 function cleanSetup(m) {
+  if (!Object.hasOwn(MAPS, m.map)) return null;
   const lay = layout(m.layout) || layout("2x1");
   const roster = Array.isArray(m.roster)
     ? m.roster
@@ -310,7 +458,7 @@ function cleanSetup(m) {
   return {
     layout: lay.id,
     mode: MODES[m.mode] ? m.mode : "dogfight",
-    map: Object.hasOwn(MAPS, m.map) ? m.map : "field",
+    map: m.map,
     ff: m.ff === true,
     speed: [0.25, 0.5, 0.75, 1].includes(m.speed) ? m.speed : 1,
     roster,
@@ -363,8 +511,18 @@ function pickTeam(team) {
 // ── On screen ───────────────────────────────────────────────────────────────
 function refresh() {
   if (!link) return;
-  // A new organiser (the old one left) takes the roster over as it stands.
-  if (amOrganiser()) {
+  if (lastOrganiser !== organiser()) {
+    lastOrganiser = organiser();
+    // A new organiser, its setup maybe already here.
+    if (!amOrganiser() && early.has(lastOrganiser)) {
+      const m = early.get(lastOrganiser);
+      early.clear();
+      if (!takeSetup(m)) return;
+    }
+  }
+  // A new organiser (the old one left) takes the roster over as it stands;
+  // never in a match or its countdown, whose roster everyone already has.
+  if (amOrganiser() && !playing && !counting) {
     const lay = layout(setup.layout);
     const known = [link.seat, ...link.peers.keys()].filter((s) =>
       people.has(s),
@@ -446,13 +604,34 @@ function refresh() {
           .filter(Boolean)
           .join(" · ");
 
-  const ready =
-    startable(setup.roster, lay) &&
-    link.settled &&
-    setup.roster.every((p) => people.has(p.seat));
   $("onStart").classList.toggle("hidden", !boss);
-  $("onStart").disabled = !ready || counting;
+  $("onStart").disabled = !ready() || counting;
   syncBoard();
+  noteRoster();
+}
+
+// A match can start: two teams or more, nobody without one, everyone's
+// hello heard and every path settled.
+const ready = () =>
+  !!link &&
+  startable(setup.roster, layout(setup.layout)) &&
+  link.settled &&
+  setup.roster.every((p) => people.has(p.seat));
+
+// game.js's over card shows Play again to the organiser while a match can
+// be made; it hears of every change that could alter that.
+function noteRoster() {
+  if (!link || playing || counting) return;
+  const key = JSON.stringify([
+    organiser(),
+    setup.layout,
+    setup.roster,
+    [...people.keys()],
+    link.settled,
+  ]);
+  if (key === rosterKey) return;
+  rosterKey = key;
+  if (!quiet) act.rosterChanged?.();
 }
 
 const describe = () =>
@@ -474,9 +653,26 @@ function syncBoard() {
   const id = groupId(hs);
   if (shownGroup?.id !== id) {
     shownGroup = { id, members: hs };
-    link.send({ t: "board", g: id, ...groupBoard(id) });
+    sendBoard();
+    // And ask for theirs: copies sent before this machine knew the group
+    // were dropped.
+    link.send({ t: "bq", g: id });
   }
   showBoard();
+}
+
+// One mode a message: all three of a nine-player group's together would be
+// over the server's MAX_MESSAGE (src/server/room.js) and never arrive.
+function sendBoard(to = null) {
+  if (!shownGroup || !link) return;
+  const board = groupBoard(shownGroup.id);
+  for (const mode of BOARD_MODES)
+    if (board[mode].length)
+      link.send(
+        { t: "board", g: shownGroup.id, mode, list: board[mode] },
+        false,
+        to,
+      );
 }
 
 function showBoard() {
@@ -493,16 +689,22 @@ function showBoard() {
 // ── Starting ────────────────────────────────────────────────────────────────
 // The organiser starts a match (and every rematch) with a fresh id.
 function go() {
-  if (!amOrganiser() || counting) return;
+  if (!amOrganiser() || counting || playing || !ready()) return;
   publish();
   net.match = newMatchId();
   link.send({ t: "go", id: net.match });
   countdown();
 }
 
-// 3, 2, 1 on every machine, then the match.
+// 3, 2, 1 on every machine, then the match. One abandoned (Back, a lost
+// connection) stops, even if a new room is open by its next tick.
 function countdown() {
   counting = true;
+  const mine = link,
+    run = ++countdowns;
+  lineUp = setup.roster
+    .filter((p) => p.team >= 0)
+    .map((p) => ({ seat: p.seat, team: p.team, who: people.get(p.seat) }));
   $("title").classList.add("hidden");
   $("over").classList.add("hidden");
   $("online").classList.remove("hidden");
@@ -510,7 +712,7 @@ function countdown() {
   status(describe());
   let n = COUNT_FROM;
   const tick = () => {
-    if (!link) return (counting = false);
+    if (link !== mine || run !== countdowns || !counting) return;
     if (n === 0) {
       counting = false;
       $("online").classList.add("hidden");
@@ -529,13 +731,9 @@ function begin() {
   net.ff = setup.ff;
   net.teams = lay.teams;
   net.roster.clear();
-  for (const p of setup.roster) {
-    if (!people.has(p.seat) || p.team < 0) continue;
-    net.roster.set(p.seat, {
-      seat: p.seat,
-      team: p.team,
-      ...people.get(p.seat),
-    });
+  for (const p of lineUp) {
+    const who = people.get(p.seat) || p.who || { h: null, n: "Pilot" };
+    net.roster.set(p.seat, { seat: p.seat, team: p.team, ...who });
   }
   net.me = people.get(link.seat);
   const hs = [...net.roster.values()].map((p) => p.h);
@@ -543,23 +741,39 @@ function begin() {
     hs.every(Boolean) && new Set(hs).size === hs.length ? groupId(hs) : null;
   playing = true;
   act.startMatch(setup);
+  // Anyone who left during the countdown is in the match, and out of it.
+  for (const p of lineUp)
+    if (p.seat !== link.seat && !link.peers.has(p.seat)) peerLeft(p.seat);
 }
 
 // ── After a match ───────────────────────────────────────────────────────────
 // Only the organiser restarts; everyone else waits for its "go". Anyone who
-// left is gone from the roster by then.
+// left is gone from the roster by then. True when this player can start
+// another now. game.js calls it again on every rosterChanged.
 export function matchEnded() {
-  playing = false;
-  if (link && amOrganiser()) {
-    setup.roster = setup.roster.filter((p) => people.has(p.seat));
-    publish();
+  if (playing) {
+    playing = false;
+    if (link && amOrganiser()) {
+      setup.roster = setup.roster.filter((p) => people.has(p.seat));
+      publish();
+    }
+    // The organiser's setups sent while we were still in the match.
+    if (afterMatch && !amOrganiser()) {
+      const m = afterMatch;
+      afterMatch = null;
+      if (!takeSetup(m)) return false;
+    }
+    afterMatch = null;
+    // Catch the lobby up on what changed during the match, without telling
+    // game.js, which is asking.
+    quiet = true;
+    try {
+      refresh();
+    } finally {
+      quiet = false;
+    }
   }
-  return (
-    !!link &&
-    !link.closed &&
-    amOrganiser() &&
-    startable(setup.roster, layout(setup.layout))
-  );
+  return !!link && !link.closed && amOrganiser() && ready();
 }
 
 export function rematch() {
@@ -572,8 +786,11 @@ export function leave() {
     link.send({ t: "bye" });
     link.close();
   }
+  if (net.on) abandonMatch();
   link = net.link = null;
-  playing = counting = false;
+  tries++;
+  playing = counting = connecting = false;
+  afterMatch = null;
   net.me = net.group = net.match = null;
   people.clear();
   $("online").classList.add("hidden");

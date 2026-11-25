@@ -246,6 +246,13 @@ function steady(inp, on, dt) {
   return on ? { ...inp, ...aimStick } : inp;
 }
 
+// How far the ground under a rolling plane may rise or fall in a frame and
+// still be the same ground: a slope, not a wall or an edge. A touch is on a
+// runway's own surface within SURFACE_TOL of its centre line's height.
+const STEP = 1.5,
+  SURFACE_TOL = 1,
+  prevPos = new V();
+
 export function updPlayer(dt) {
   const inp = readInput(),
     pt = P.pt;
@@ -396,6 +403,7 @@ export function updPlayer(dt) {
       along = game.mode === "classic" || Math.abs(b.f.z) < pt.along;
     if (
       onRw &&
+      onSurface(gy) &&
       !dead &&
       !P.spin &&
       vs < pt.sink &&
@@ -422,18 +430,31 @@ export function updPlayer(dt) {
           ? "Shot down!"
           : P.spin
             ? "Spun in! Push, idle, opposite rudder to recover"
-            : onRw
+            : onRw && onSurface(gy)
               ? `Too hard! Wings level, sink under ${Math.floor(pt.sink)} m/s`
               : land.crash
                 ? land.crash(P.pos)
                 : "Crashed — land on a runway",
       );
   }
-  // A flight deck has nothing round it: off its edge, a plane at flying
-  // speed flies on, and a slower one goes into the sea.
-  if (P.grounded && land.deck && !onRw) {
-    if (P.speed < pt.stall) return crash(P.pos, "Rolled off the deck");
-    P.grounded = false;
+  // Rolling over ground that is more than the ground (land.height): a step
+  // up is something to run into (a carrier's island, a cliff, a hangar); a
+  // drop is an edge (a deck's, an island's), where a plane at flying speed
+  // flies on, and a slower one falls. The Countryside has neither.
+  if (P.grounded && land.height) {
+    const step = gy - P.pos.y;
+    if (step > STEP)
+      return crash(P.pos, land.crash ? land.crash(P.pos) : "Crashed");
+    if (step < -STEP) {
+      if (P.speed < pt.stall) {
+        prevPos.copy(P.pos).addScaledVector(P.vel, -dt);
+        return crash(
+          P.pos,
+          onAnyField(prevPos) ? "Rolled off the deck" : "Rolled off the edge",
+        );
+      }
+      P.grounded = false;
+    }
   }
   if (P.grounded) {
     if (game.mode !== "classic") {
@@ -463,9 +484,11 @@ export function updPlayer(dt) {
   // ── Obstacles ─────────────────────────────────────────────────────────────
   for (const t of targets)
     if (
-      P.pos.y < t.y + t.h + 1.5 &&
-      P.pos.y > t.floor &&
-      Math.hypot(P.pos.x - t.x, P.pos.z - t.z) < t.r
+      t.hit
+        ? t.hit(t, P.pos, 1.5)
+        : P.pos.y < t.y + t.h + 1.5 &&
+          P.pos.y > t.floor &&
+          Math.hypot(P.pos.x - t.x, P.pos.z - t.z) < t.r
     )
       return crash(
         P.pos,
@@ -476,10 +499,13 @@ export function updPlayer(dt) {
   for (const s of solids)
     if (P.pos.y < s.h + 1.5 && Math.hypot(P.pos.x - s.x, P.pos.z - s.z) < s.r)
       return crash(P.pos, "Flew into a building");
+  // A hippo up on a hill or an island is not hit from under it. On the
+  // ground (the Countryside's, y = 0) nothing alive is below one anyway.
   for (const h of hippos)
     if (
       h.alive &&
       P.pos.y < h.g.position.y + 5.5 &&
+      (h.g.position.y <= 0 || P.pos.y > h.g.position.y - 1) &&
       Math.hypot(P.pos.x - h.x, P.pos.z - h.z) < 4.5
     )
       return crash(P.pos, "You hit a hippo. The hippo is fine.");
@@ -511,6 +537,25 @@ export function updPlayer(dt) {
   P.obj.position.copy(P.pos);
   P.obj.quaternion.copy(P.q);
   P.obj.userData.prop.rotation.z += (P.thr * 55 + (P.speed > 1 ? 6 : 0)) * dt;
+}
+
+// A runway's own surface, not a roof standing in its rect (the Sea's
+// carrier island): the ground at the touch is the ground on the runway's
+// centre line beside it. Only maps whose ground is more than the ground
+// (land.height) can tell them apart; on the Countryside a runway is a runway.
+function onSurface(gy) {
+  if (!land.height) return true;
+  const R = runwayUnder(P.pos);
+  return (
+    !!R && Math.abs(groundY(P.pos.x, R.z, P.pos.y) + GEAR - gy) < SURFACE_TOL
+  );
+}
+// The runway whose rect `p` is in: this plane's own first.
+function runwayUnder(p) {
+  if (onRun(p, P.base)) return P.base;
+  if (onRun(p, HOME)) return HOME;
+  if (onRun(p, EB)) return EB;
+  return fields.find((f) => onRun(p, f)) || null;
 }
 
 // A turn rate that closes `err` proportionally, capped at `max` rad/s.

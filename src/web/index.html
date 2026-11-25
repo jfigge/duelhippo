@@ -60,7 +60,7 @@
         </div>
         <div class="teams hidden" id="hTeams"></div>
         <div class="row hidden" id="hCourseRow">
-          <span>RING</span><b id="hRing">0</b><span>TIME</span
+          <span>RING</span><b id="hRing">0</b><span>LEFT</span
           ><b id="hTime">0:00.0</b>
         </div>
         <div class="row hidden" id="hSpeedRow">
@@ -112,7 +112,7 @@
       <button id="bAim" class="tbtn">AIM</button>
       <button id="bMsl" class="tbtn">MSL</button>
       <button id="bCam" class="mini">CAM</button>
-      <button id="bPause" class="mini">II</button>
+      <button id="bPause" class="mini" aria-label="Pause">II</button>
     </div>
 
     <section id="title" class="ov">
@@ -121,7 +121,7 @@
           <div id="mascot"></div>
           <h1><span>DUEL</span><br /><em>HIPPO</em></h1>
         </div>
-        <p>
+        <p class="intro">
           Take off, shoot down the magenta flyers and bomb their town. Then get
           home and land before the tank runs dry.
         </p>
@@ -149,7 +149,7 @@
             >
           </button>
         </div>
-        <div class="pick maps" id="maps" aria-label="Map"></div>
+        <div class="pick maps" id="maps" role="group" aria-label="Map"></div>
         <p class="pickNote">
           Maps for Free flight and team games. Each opens when one game scores
           1,000 more than the last one needed.
@@ -188,7 +188,7 @@
           rings closer and the turns tighter, and scores more a ring. Finish a
           level to open the next.
         </p>
-        <div class="pick" id="cSizes"></div>
+        <div class="pick" id="cSizes" role="group" aria-label="Level"></div>
         <ol id="cBoard" class="board"></ol>
         <div class="foot">
           <button id="cBack" class="ghost">Back</button
@@ -397,7 +397,12 @@
             ><button data-gmode="flag">Flag</button
             ><button data-gmode="endless">Endless</button>
           </div>
-          <div class="pick maps" id="onMaps" aria-label="Map"></div>
+          <div
+            class="pick maps"
+            id="onMaps"
+            role="group"
+            aria-label="Map"
+          ></div>
           <div class="pick">
             <select id="onLayout" aria-label="Teams"></select
             ><button id="onFF"><i>Friendly fire</i> off</button>

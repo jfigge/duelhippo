@@ -23,7 +23,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadPort } from "./harness.js";
+import { loadPort, seededRandom } from "./harness.js";
 import { PROTO } from "../net/protocol.js";
 import { fakeServer, tick, hash } from "./fake-server.js";
 
@@ -32,7 +32,10 @@ const { w, duel } = game;
 const P = duel.P;
 const $ = (id) => w.document.getElementById(id);
 const { land, groundY } = await import("../world.js");
-const { mapNow, useMap } = await import("../maps.js");
+const { scene } = await import("../scene.js");
+const { fire } = await import("../weapons.js");
+const THREE = await import("three");
+const { mapNow, useMap, startMap } = await import("../maps.js");
 const { HOME, GEAR, CITY, SEA } = await import("../constants.js");
 const msg = () => $("msg").textContent;
 // Every map earned (they open with the best score: maps-unlock.test.js).
@@ -117,39 +120,46 @@ test("City: the cloud ceiling turns a climb back down", () => {
 });
 
 test("City: the enemy flyers hunt through the streets, round the towers", () => {
-  game.start("free");
+  // Over several games, each from its own random numbers (so what it finds
+  // is not down to the tests before it), none flies into a tower.
   let seen = 0,
     towers = 0,
-    turned = 0,
-    t = 0;
-  const was = duel.enemies.map((e) => e.alive),
-    heading = duel.enemies.map(() => null);
-  // The player, kept flying a slow circuit down the boulevard and kept
-  // whole, for them to hunt.
-  for (let i = 0; i < 1500; i++) {
-    t += 0.1;
-    game.poke((P) => {
-      P.alive = true;
-      P.dmg = 0;
-      P.grounded = false;
-      P.pos.set(1400 + Math.cos(t * 0.2) * 600, 150, Math.sin(t * 0.2) * 100);
-      P.speed = 50;
-      P.sink = 0;
-    });
-    game.run(100);
-    duel.enemies.forEach((e, k) => {
-      const f = Math.atan2(e.q.y, e.q.w);
-      if (was[k] && e.alive && Math.abs(f - heading[k]) > 0.5) turned++;
-      if (was[k] && !e.alive && groundY(e.pos.x, e.pos.z) > e.pos.y - 3)
-        towers++;
-      if (!was[k] && e.alive) {
-        seen++;
-        heading[k] = f;
-      }
-      was[k] = e.alive;
-    });
+    turned = 0;
+  for (const seed of [11, 34, 45, 47]) {
+    // (and the flyers' patrol clocks from nought: they carry over)
+    for (const e of duel.enemies) e.t = 0;
+    Math.random = seededRandom(seed);
+    game.start("free");
+    let t = 0;
+    const was = duel.enemies.map((e) => e.alive),
+      heading = duel.enemies.map(() => null);
+    // The player, kept flying a slow circuit down the boulevard and kept
+    // whole, for them to hunt.
+    for (let i = 0; i < 1500; i++) {
+      t += 0.1;
+      game.poke((P) => {
+        P.alive = true;
+        P.dmg = 0;
+        P.grounded = false;
+        P.pos.set(1400 + Math.cos(t * 0.2) * 600, 150, Math.sin(t * 0.2) * 100);
+        P.speed = 50;
+        P.sink = 0;
+      });
+      game.run(100);
+      duel.enemies.forEach((e, k) => {
+        const f = Math.atan2(e.q.y, e.q.w);
+        if (was[k] && e.alive && Math.abs(f - heading[k]) > 0.5) turned++;
+        if (was[k] && !e.alive && groundY(e.pos.x, e.pos.z) > e.pos.y - 3)
+          towers++;
+        if (!was[k] && e.alive) {
+          seen++;
+          heading[k] = f;
+        }
+        was[k] = e.alive;
+      });
+    }
   }
-  assert.ok(seen >= 2, `${seen} flew`);
+  assert.ok(seen >= 8, `${seen} flew`);
   assert.ok(turned > 0, "and turned to hunt");
   assert.equal(towers, 0, "none flew into a tower");
 });
@@ -223,6 +233,80 @@ test("Sea: the fleet is the town, and bombs sink it", () => {
   assert.match(msg(), /Destroyer destroyed|town flattened/);
 });
 
+test("Sea: an island's ground is its sand and its hill, as drawn", () => {
+  game.start("free");
+  // The sand bars (9 sides) and their hills (7), as the map draws them.
+  const isles = [];
+  scene.traverse((o) => {
+    const p = o.geometry?.parameters;
+    if (o.geometry?.type === "CylinderGeometry" && p.radialSegments === 9)
+      isles.push(o);
+  });
+  assert.equal(isles.length, 5);
+  const hills = [];
+  scene.traverse((o) => {
+    const p = o.geometry?.parameters;
+    if (o.geometry?.type === "CylinderGeometry" && p.radialSegments === 7)
+      hills.push(o);
+  });
+  scene.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(),
+    down = new THREE.Vector3(0, -1, 0),
+    from = new THREE.Vector3();
+  for (const I of isles) {
+    const r = I.geometry.parameters.radiusBottom,
+      { x, z } = I.position;
+    let n = 0;
+    for (let dx = -r; dx <= r; dx += r / 12)
+      for (let dz = -r; dz <= r; dz += r / 12) {
+        ray.set(from.set(x + dx, 200, z + dz), down);
+        const hit = ray.intersectObjects([I, ...hills])[0],
+          seen = hit && hit.point.y > 0 ? hit.point.y : 0;
+        assert.ok(
+          Math.abs(groundY(x + dx, z + dz) - seen) < 0.01,
+          `at ${dx}, ${dz} of ${r}: ${groundY(x + dx, z + dz)} vs ${seen}`,
+        );
+        if (seen > 0) n++;
+      }
+    assert.ok(n > 100, `${n} points on it`);
+  }
+});
+
+test("Sea: a ship is hit where it is, bow to stern", () => {
+  game.start("free");
+  const t = duel.targets[0],
+    at = (x, y, z, pad) =>
+      t.hit(t, new THREE.Vector3(t.x + x, t.y + y, t.z + z), pad);
+  assert.equal(t.kind, "destroyer");
+  assert.ok(at(50, 2, 0), "the bow, past its old reach");
+  assert.ok(at(-38, 3, 0), "the stern");
+  assert.ok(at(5, 14, 0), "the bridge");
+  assert.ok(!at(50, 2, 6), "beside the bow");
+  assert.ok(!at(-30, 20, 0), "over the deck");
+  assert.ok(at(-30, 20, 0, 12), "a bomb's burst reaches it");
+  // Turned a quarter, its bow is along −z.
+  t.g.rotation.y = Math.PI / 2;
+  assert.ok(t.hit(t, new THREE.Vector3(t.x, 2, t.z - 50)));
+  assert.ok(!t.hit(t, new THREE.Vector3(t.x + 50, 2, t.z)));
+  t.g.rotation.y = 0;
+  // A round across its bow, 44 m out from its middle, holes it.
+  const hp = t.hp;
+  fire(
+    new THREE.Vector3(t.x + 44, 3, t.z + 40),
+    new THREE.Vector3(0, 0, -1),
+    480,
+    "p",
+  );
+  game.run(200);
+  assert.equal(t.hp, hp - 1);
+  for (const k of ["cargo", "patrol"]) {
+    const u = duel.targets.find((u) => u.kind === k);
+    assert.equal(typeof u.hit, "function", k);
+  }
+  const cargo = duel.targets.find((u) => u.kind === "cargo");
+  assert.ok(cargo.hit(cargo, new THREE.Vector3(cargo.x + 43, 4, cargo.z)));
+});
+
 test("back to the Countryside: everything as the prototype had it", () => {
   pick("field");
   game.start("free");
@@ -284,12 +368,74 @@ test("a team game in the City clears room round each field", async () => {
         if (groundY(x + dx, z + dz) > 0) return true;
     return false;
   };
+  // Is a tower drawn there? (Under the cloud, higher than a hangar.)
+  scene.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(),
+    down = new THREE.Vector3(0, -1, 0),
+    drawn = ({ x, z }) => {
+      // the merged meshes: the towers by colour, and their roofs
+      const big = [];
+      scene.traverse((o) => {
+        if (o.isMesh && !o.isInstancedMesh && o.visible)
+          if (o.geometry.attributes.position.count > 500) big.push(o);
+      });
+      for (let dx = -330; dx <= 330; dx += 30)
+        for (let dz = -150; dz <= 150; dz += 30) {
+          ray.set(new THREE.Vector3(x + dx, CITY.ceil - 5, z + dz), down);
+          const hit = ray.intersectObjects(big)[0];
+          if (hit && hit.point.y > 20) return true;
+        }
+      return false;
+    };
+  // How many times the towers have been drawn again: each drawing frees the
+  // last one's merged meshes, so count the drawings whose meshes went.
+  let drawing = 0;
+  const gone = new Set(),
+    watched = new Set(),
+    watch = () => {
+      drawing++;
+      scene.traverse((o) => {
+        const g = o.geometry;
+        if (!o.isMesh || o.isInstancedMesh || watched.has(g)) return;
+        if (g.attributes.position.count <= 500) return;
+        watched.add(g);
+        const n = drawing;
+        g.addEventListener("dispose", () => gone.add(n));
+      });
+    },
+    redraws = () => gone.size;
   const spots = fieldSpots(3);
   const before = spots.map(crowded);
   assert.ok(before.some(Boolean), "the city stands where the fields go");
+  assert.deepEqual(spots.map(drawn), before, "and is drawn there");
+  watch();
   buildFields(3);
   assert.deepEqual(spots.map(crowded), [false, false, false]);
+  assert.equal(redraws(), 0, "not once a field");
+  // Drawn again once, as the game starts.
+  startMap();
+  assert.equal(redraws(), 1, "once, as the game starts");
+  watch();
+  startMap();
+  assert.equal(redraws(), 1, "and not again for nothing");
+  scene.updateMatrixWorld(true);
+  assert.deepEqual(spots.map(drawn), [false, false, false]);
+  // A rematch: the fields go and come again (game.js startMatch), and the
+  // towers are drawn once more, as it starts.
+  watch();
+  clearFields();
+  buildFields(3);
+  assert.equal(redraws(), 1, "not as the fields go and come");
+  startMap();
+  assert.equal(redraws(), 2, "once, as the rematch starts");
+  // The match over: the ground at once, the towers on the title.
+  watch();
   clearFields();
   assert.equal(fields.length, 0);
   assert.deepEqual(spots.map(crowded), before, "and stands again after");
+  assert.equal(redraws(), 2, "drawn on the title, not as the fields go");
+  startMap();
+  assert.equal(redraws(), 3);
+  scene.updateMatrixWorld(true);
+  assert.deepEqual(spots.map(drawn), before, "drawn again after");
 });

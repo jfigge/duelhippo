@@ -29,8 +29,12 @@ import {
   route,
   underLimit,
   acceptable,
+  arrivalOrder,
+  nextArrival,
+  joinCode,
   CLOSE,
   MAX_SEATS,
+  MAX_MESSAGE,
   MAX_PER_SECOND,
 } from "../room.js";
 
@@ -103,5 +107,27 @@ test("a flood is cut off at the limit and forgiven the next second", () => {
 test("only short text is carried", () => {
   assert.ok(acceptable('{"t":"g"}'));
   assert.ok(!acceptable(new ArrayBuffer(8)));
-  assert.ok(!acceptable("x".repeat(9000)));
+  assert.ok(acceptable("x".repeat(MAX_MESSAGE)));
+  assert.ok(!acceptable("x".repeat(MAX_MESSAGE + 1)));
+});
+
+test("players are listed in the order they came, whatever their seats", () => {
+  // Seat 0 left and a newcomer took it: it is last, not first.
+  const here = [
+    { seat: 2, at: 1 },
+    { seat: 0, at: 3 },
+    { seat: 1, at: 0 },
+  ];
+  assert.deepEqual(arrivalOrder(here), [1, 2, 0]);
+  assert.equal(nextArrival(here), 4);
+  assert.equal(nextArrival([]), 0);
+  // Sockets from before arrival was recorded come first, by seat.
+  assert.deepEqual(arrivalOrder([{ seat: 3, at: 0 }, { seat: 1 }]), [1, 3]);
+});
+
+test("a join path's code is decoded, and nonsense is no code", () => {
+  assert.equal(joinCode("kqzf"), "KQZF");
+  assert.equal(joinCode("K%20QZF"), "KQZF");
+  assert.equal(joinCode("%E0%A4%A"), null, "malformed: no throw");
+  assert.equal(joinCode("%"), null);
 });

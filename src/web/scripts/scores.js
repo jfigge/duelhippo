@@ -278,9 +278,11 @@ function cleanEntry(e, members) {
   return { id: e.id, at: e.at, m: e.m, p, w };
 }
 
-// Two copies of a board made one. The same match on both keeps each
-// player's higher score (scores only grow in a match, so the higher one is
-// the later reading).
+// Two copies of a board made one, the same whichever comes first. The same
+// match on both keeps each player's higher score (scores only grow in a
+// match, so the higher one is the later reading) and the earlier time; two
+// copies that name different winners (builds from before the result was
+// settled from everyone's fins) name none.
 export function mergeLists(mode, a, b, members) {
   const byId = new Map();
   for (const raw of [...a, ...b]) {
@@ -293,9 +295,12 @@ export function mergeLists(mode, a, b, members) {
     }
     for (const x of had.p) {
       const y = e.p.find((q) => q[0] === x[0]);
-      if (y && y[2] > x[2]) x[2] = y[2];
+      if (!y) continue;
+      if (y[2] > x[2]) x[2] = y[2];
+      if (y[1] < x[1]) x[1] = y[1];
     }
-    had.w = had.w ?? e.w;
+    had.at = Math.min(had.at, e.at);
+    if (had.w !== e.w) had.w = null;
   }
   return [...byId.values()]
     .sort((x, y) => rankScore(mode, y) - rankScore(mode, x) || x.at - y.at)

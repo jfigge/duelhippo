@@ -125,8 +125,11 @@ export const sfx = (() => {
   return {
     init,
     engine,
+    // Any state but running: iOS leaves the context "interrupted" after a
+    // call or another app's audio, not "suspended". A closed one is gone.
     resume() {
-      if (ac && ac.state === "suspended") ac.resume();
+      if (ac && ac.state !== "running" && ac.state !== "closed")
+        ac.resume()?.catch?.(() => {});
     },
     gun() {
       blip(1250, 230, 0.05, 0.06);

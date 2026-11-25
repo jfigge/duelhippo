@@ -139,7 +139,26 @@ const COLUMN = [
   "sled",
   "halftrack",
 ];
-const TOWN = COLUMN.map((k, i) => [k, 1700 - i * 40, null, CONVOY.z]);
+const LEAD = 1700,
+  TOWN = COLUMN.map((k, i) => [k, LEAD - i * 40, null, CONVOY.z]);
+
+// Where the column is `T` s after the game began: how far it has driven
+// from where it started (`off`, m) and the way its vehicles face (`yaw`).
+// It drives up the fjord first; when its lead nears the head it turns round
+// together, and again when its tail nears the foot, so it never drives
+// through itself; each turn takes 1.2 rad/s. A function of time, not of
+// the frames flown, so in a team game every machine has it in one place.
+const UP = FJORD.x1 - 30 - LEAD,
+  DOWN = FJORD.x0 + 30 - (LEAD - (COLUMN.length - 1) * 40),
+  RUN = UP - DOWN;
+export function convoyAt(T, out = {}) {
+  const p = (((CONVOY.speed * T - DOWN) % (2 * RUN)) + 2 * RUN) % (2 * RUN),
+    up = p < RUN,
+    turned = Math.min(Math.PI, (1.2 * (up ? p : p - RUN)) / CONVOY.speed);
+  out.off = DOWN + (up ? p : 2 * RUN - p);
+  out.yaw = up ? Math.PI - turned : turned;
+  return out;
+}
 
 export default function build(kit) {
   const { THREE, P, put, flat, M, scene } = kit;
@@ -227,14 +246,19 @@ export default function build(kit) {
 
   // The ground's heights at the grid's corners; between them, the very
   // triangles the mesh draws, so what you see is what you hit.
+  // A team field marks them `stale` and they are surveyed again when next
+  // asked for, so eight fields cost one survey, not eight.
   const H = new Float32Array(ROW * ROW);
+  let stale = false;
   function survey() {
+    stale = false;
     for (let j = 0; j < ROW; j++)
       for (let i = 0; i < ROW; i++)
         H[j * ROW + i] = level(X0 + i * STEP, Z0 + j * STEP);
   }
   survey();
   function height(x, z) {
+    if (stale) survey();
     const u = (x - X0) / STEP,
       v = (z - Z0) / STEP;
     if (!(u >= 0 && v >= 0 && u < CELLS && v < CELLS)) return 0;
@@ -269,6 +293,7 @@ export default function build(kit) {
   group.add(terrain);
   const tc = new THREE.Color();
   function draw() {
+    if (stale) survey();
     let t = 0;
     const tri = (i0, j0, i1, j1, i2, j2) => {
       const o = t * 9;
@@ -406,23 +431,31 @@ export default function build(kit) {
   // at the height of the ground where it falls, with a strip and a hangar.
   // The level runs a whole grid cell past the strip and the hangar, so
   // every triangle under them is flat.
+  // The ground and its pines are drawn again once the fields are all down
+  // (settle: the game's start, or its first frame), not once a field.
+  let undrawn = false;
+  function settle() {
+    if (!undrawn) return;
+    undrawn = false;
+    draw();
+    plant();
+  }
   function field(f, c) {
     const y = raw(f.x, f.z);
     flats.push({ x: f.x, z: f.z, hx: f.hl + 80, hz: 130, y, b: 180 });
-    survey();
-    draw();
-    plant();
+    stale = undrawn = true;
     put(f.g, flat(f.hl * 2 + 160, 260, ICE[0], -1), 0, y + 0.03, 0);
     strip({ x: 0, z: 0, hl: f.hl, hw: f.hw }, c.plane[2], f.g, y);
     kit.hangar(-120, -70, c.plane[1], false, f.g).position.y = y;
     return [{ x: f.x - 120, z: f.z - 70, r: 17, h: y + 12.5 }];
   }
+  // The fields gone: the ground at once (surveyed when next asked), the
+  // mesh when the map is next shown or played (enter, start).
   function unfield() {
-    if (flats.length === 1) return;
-    flats.length = 1;
-    survey();
-    draw();
-    plant();
+    if (flats.length > 1) {
+      flats.length = 1;
+      stale = undrawn = true;
+    }
   }
 
   // ── Blizzards ───────────────────────────────────────────────────────────
@@ -456,8 +489,9 @@ export default function build(kit) {
   );
   group.add(squall);
   function drift(time) {
-    blizzards.forEach((b, k) => {
-      const a = (time / PERIOD) * 2 * Math.PI + b.ph;
+    for (let k = 0; k < blizzards.length; k++) {
+      const b = blizzards[k],
+        a = (time / PERIOD) * 2 * Math.PI + b.ph;
       b.x = b.x0 + Math.cos(a) * DRIFT;
       b.z = b.z0 + Math.sin(a) * DRIFT;
       for (let n = 0; n < PER; n++) {
@@ -468,7 +502,7 @@ export default function build(kit) {
           mx.compose(at.set(b.x + dx, y, b.z + dz), q.identity(), sc),
         );
       }
-    });
+    }
     squall.instanceMatrix.needsUpdate = true;
   }
   drift(0);
@@ -537,16 +571,16 @@ export default function build(kit) {
       sky: new THREE.Color(),
     },
     white = new THREE.Color(0xe4eaee);
+  // `time` is since the game began (start): the blizzards and the convoy
+  // go by it.
   let time = 0,
     thick = 0,
-    inside = false,
-    dir = 1;
+    inside = false;
   function weather(dt) {
-    time += dt;
     drift(time);
-    const now = blizzards.some(
-      (b) => Math.hypot(P.pos.x - b.x, P.pos.z - b.z) < b.r,
-    );
+    let now = false;
+    for (const b of blizzards)
+      if (Math.hypot(P.pos.x - b.x, P.pos.z - b.z) < b.r) now = true;
     if (now && !inside) kit.say("Blizzard!", 2);
     inside = now;
     thick = Math.min(1, Math.max(0, thick + (now ? CLOSE : -CLOSE) * dt));
@@ -559,25 +593,19 @@ export default function build(kit) {
     scene.fog.color.copy(own.fog).lerp(white, k);
     scene.background.copy(own.sky).lerp(white, k);
   }
-  // The column turns round together when its lead reaches the fjord's end,
-  // so it never drives through itself.
-  function convoy(dt) {
-    let lo = Infinity,
-      hi = -Infinity;
-    const cars = targets.filter((t) => t.alive && KINDS[t.kind]);
-    for (const t of cars) {
-      lo = Math.min(lo, t.x);
-      hi = Math.max(hi, t.x);
-    }
-    if (dir > 0 && hi > FJORD.x1 - 30) dir = -1;
-    else if (dir < 0 && lo < FJORD.x0 + 30) dir = 1;
-    const face = dir > 0 ? 0 : Math.PI;
-    for (const t of cars) {
-      t.x += dir * CONVOY.speed * dt;
+  // The convoy where convoyAt has it; a wreck stays where it stopped. A
+  // town built again mid-game comes out where the column has got to.
+  const column = {};
+  function convoy() {
+    const { off, yaw } = convoyAt(time, column);
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i];
+      if (!t.alive || !KINDS[t.kind]) continue;
+      t.g.userData.x0 ??= t.x;
+      t.x = t.g.userData.x0 + off;
       t.z = CONVOY.z;
       t.g.position.set(t.x, t.y, t.z);
-      const r = t.g.rotation;
-      r.y += Math.max(-1.2 * dt, Math.min(1.2 * dt, face - r.y));
+      t.g.rotation.y = yaw;
     }
   }
 
@@ -612,8 +640,10 @@ export default function build(kit) {
         Object.entries(KINDS).map(([k, f]) => [k, (g) => f(g, kit)]),
       ),
       tick(dt) {
+        settle();
+        time += dt;
         weather(dt);
-        convoy(dt);
+        convoy();
       },
       field,
       unfield,
@@ -631,12 +661,24 @@ export default function build(kit) {
     below: 0xb8c4cc,
     light: [0.85, 0.8],
     enter() {
+      settle();
       own.near = scene.fog.near;
       own.far = scene.fog.far;
       own.fog.copy(scene.fog.color);
       own.sky.copy(scene.background);
       thick = 0;
       inside = false;
+    },
+    // A new game: the clock from nought (so the convoy sets off up the
+    // fjord from its start, and the blizzards from theirs), clear air.
+    start() {
+      settle();
+      time = thick = 0;
+      inside = false;
+      fogTo(0);
+      snow.visible = false;
+      drift(0);
+      convoy();
     },
     leave() {
       thick = 0;

@@ -70,6 +70,9 @@ export function addRemote(seat, team) {
     lives: 3,
     out: false, // out of planes (or of the match)
     gone: false, // left the match
+    // net/link.js's number on their last crash or out: a state update
+    // numbered before it is stale (net/match.js).
+    after: -Infinity,
     obj,
     shadow: blob(),
     buf: [], // { at, p: V, q: Q, s }
@@ -84,7 +87,18 @@ export function dropRemote(seat) {
   if (!r) return;
   scene.remove(r.obj);
   scene.remove(r.shadow);
+  dispose(r.obj);
+  dispose(r.shadow);
   remotes.delete(seat);
+}
+
+// makePlane and blob build every plane's geometries and materials afresh,
+// so a plane put away gives its GPU memory back.
+function dispose(obj) {
+  obj.traverse((o) => {
+    o.geometry?.dispose();
+    for (const m of [].concat(o.material ?? [])) m.dispose();
+  });
 }
 
 export function clearRemotes() {
@@ -110,6 +124,7 @@ export function pushState(seat, s, at) {
     obj.position.copy(r.obj.position);
     obj.quaternion.copy(r.obj.quaternion);
     scene.remove(r.obj);
+    dispose(r.obj);
     r.obj = obj;
     ghostly(r.obj, r.ghost);
   }

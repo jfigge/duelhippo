@@ -23,7 +23,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadPort } from "./harness.js";
+import { loadPort, seededRandom } from "./harness.js";
 
 const game = await loadPort(3);
 const { w, duel } = game;
@@ -98,6 +98,13 @@ test("Volcano: flying into the ash plume stalls the engine for a while", () => {
   assert.ok(P.alive);
   assert.equal(land.power, 0, "no thrust");
   assert.match(msg(), /Ash in the engine!/);
+  // Said once, on the way in: not again every frame it lasts, over
+  // whatever else there is to say.
+  $("msg").textContent = "something else";
+  flyAt(VX + PLUME.wx * l, y, VZ + PLUME.wz * l, 60, 1);
+  game.run(300);
+  assert.equal(land.power, 0, "still in it");
+  assert.equal(msg(), "something else");
   // Out of it, the engine catches again after 2.5 s.
   flyAt(1400, 900, 1400, 60, 1);
   game.run(1500);
@@ -169,6 +176,9 @@ test("Volcano: what a crash hits", () => {
 });
 
 test("Volcano: the enemy flyers hunt round the volcano, not into it", () => {
+  // Its own random numbers, so what it finds is not down to the tests
+  // before it.
+  Math.random = seededRandom(15);
   game.start("free");
   let seen = 0,
     ground = 0,

@@ -23,6 +23,7 @@
 // batteries under it fire up it at you until you break out.
 
 import { targets, fields, countryside } from "../world.js";
+import { TEAM } from "../net/teams.js";
 
 // [x, z] of each searchlight, among the town's buildings.
 const LIGHTS = [
@@ -33,7 +34,8 @@ const LIGHTS = [
   [2600, 120],
 ];
 const BEAM = { length: 1100, half: 0.09, hold: 3, rate: 0.15 };
-const EDGES = [0x55ffff, 0xff55ff]; // the runway edge lights' colours
+// The Countryside's runway edge lights' colours; a team's are its own.
+const EDGES = [0x55ffff, 0xff55ff];
 
 export default function build(kit) {
   const { THREE, put, box, M, P, say, flakAt } = kit;
@@ -117,6 +119,7 @@ export default function build(kit) {
       el: 0.9,
       t: i * 2.1,
       caught: 0,
+      warned: false, // said "Searchlight!" for this hold
       cd: 0,
     };
   });
@@ -155,9 +158,12 @@ export default function build(kit) {
       l.el = Math.atan2(to.y, Math.hypot(to.x, to.z));
       if ((l.cd -= dt) <= 0 && flakAt(l.at, BEAM.length, 0.03)) {
         l.cd = BEAM.rate;
-        say("Searchlight! Break out of the beam", 0.8);
+        // Once a hold, not every shot: it would bury every other message.
+        if (!l.warned) say("Searchlight! Break out of the beam", 1.5);
+        l.warned = true;
       }
     } else {
+      l.warned = false;
       l.t += dt;
       l.az += 0.25 * dt;
       l.el = 0.75 + 0.35 * Math.sin(l.t * 0.4);
@@ -166,8 +172,13 @@ export default function build(kit) {
   }
 
   // Lit windows on the town's buildings, dark once a building is wrecked.
-  const lamp = M(0xffd27a);
+  // Every window is the one lamp and the one pane, so they are flagged as
+  // shared: a wreck darkens only its own (world.js wreck), and a town
+  // rebuilt frees neither (world.js dispose).
+  const lamp = M(0xffd27a),
+    pane = new THREE.BoxGeometry(2.2, 1.6, 0.3);
   lamp.emissive.setHex(0xffb84a);
+  lamp.userData.shared = pane.userData.shared = true;
   function windows() {
     for (const t of targets) {
       const g = t.g;
@@ -176,7 +187,7 @@ export default function build(kit) {
         for (let k = 0; k < 6; k++) {
           const w = put(
             g,
-            new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 0.3), lamp),
+            new THREE.Mesh(pane, lamp),
             -6 + (k % 3) * 6,
             3 + Math.floor(k / 3) * 4,
             t.r * 0.6,
@@ -191,16 +202,34 @@ export default function build(kit) {
     }
   }
 
-  // The runways' edge lights glow, the Countryside's and any team's.
-  const glowing = new Set();
-  function glow(root) {
+  // The runways' edge lights glow, the Countryside's and any team's, each
+  // team's in its own colour. A field is lit once, when it is first seen.
+  const glowing = new Set(),
+    lit = new Map(); // a team field → the materials it glows with
+  function glow(root, edges, mine = []) {
     root.traverse((o) => {
       const c = o.material?.color?.getHex();
-      if (o.isMesh && EDGES.includes(c) && !glowing.has(o.material)) {
+      if (o.isMesh && edges.includes(c) && !glowing.has(o.material)) {
         o.material.emissive.setHex(c);
         glowing.add(o.material);
+        mine.push(o.material);
       }
     });
+    return mine;
+  }
+  function glowFields() {
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      if (!lit.has(f))
+        lit.set(f, glow(f.g, [TEAM[f.team % TEAM.length].plane[2]]));
+    }
+    // Fields gone with their match: forget them.
+    if (lit.size > fields.length)
+      for (const [f, mine] of lit)
+        if (!fields.includes(f)) {
+          for (const m of mine) glowing.delete(m);
+          lit.delete(f);
+        }
   }
 
   return {
@@ -210,7 +239,7 @@ export default function build(kit) {
       tick(dt) {
         for (const l of lights) sweep(l, dt);
         windows();
-        for (const f of fields) glow(f.g);
+        glowFields();
       },
     },
     sky: 0x0b1026,
@@ -218,12 +247,24 @@ export default function build(kit) {
     below: 0x101820,
     light: [0.22, 0.16],
     enter() {
-      glow(countryside);
+      glow(countryside, EDGES);
       windows();
+      glowFields();
+    },
+    // A new game: its town and the team fields lit from its first frame,
+    // and no beam still holding on to the last game's plane.
+    start() {
+      windows();
+      glowFields();
+      for (const l of lights) {
+        l.caught = l.cd = 0;
+        l.warned = false;
+      }
     },
     leave() {
       for (const m of glowing) m.emissive.setHex(0);
       glowing.clear();
+      lit.clear();
     },
   };
 }

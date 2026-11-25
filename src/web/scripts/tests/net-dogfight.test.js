@@ -105,6 +105,10 @@ test("START counts every machine down, then the dogfight starts at our field", a
   const f = duel.fields[0];
   assert.equal(P.pos.x, f.x - 190, "first in line on our runway");
   assert.equal(P.pos.z, f.z);
+  assert.ok(
+    duel.camera.position.distanceTo(P.pos) < 120,
+    "the camera starts behind the plane, not across the map",
+  );
   assert.equal(duel.remotes.size, 3);
   assert.equal(duel.targets.length, 0, "a dogfight has no town");
   assert.ok(!$("hTeams").classList.contains("hidden"));
@@ -145,9 +149,12 @@ test("each plane is drawn as the type its player flies", () => {
   assert.equal(net.sent("s").at(-1).pl, 0, "ours: the Kite");
   const r = duel.remotes.get(1),
     kite = r.obj;
+  let freed = 0;
+  kite.traverse((o) => o.geometry?.addEventListener("dispose", () => freed++));
   net.from(1, state([1400, 120, -1700], { pl: 2 }));
   assert.equal(r.kind, 2);
   assert.notEqual(r.obj, kite, "a Lancer now");
+  assert.ok(freed > 0, "the Kite's geometry is given back");
   net.from(1, state([1400, 120, -1700], { pl: 9 }));
   assert.equal(r.kind, 0, "nonsense reads as the Kite");
 });
@@ -192,6 +199,17 @@ test("our kills score; a teammate's crash at our hands does not", () => {
   assert.equal(S.score, s + 100);
 });
 
+test("a state update older than a crash does not bring the plane back", () => {
+  const r = duel.remotes.get(1);
+  net.from(1, state([1400, 120, -1700]), 900);
+  assert.ok(r.alive);
+  net.from(1, { t: "down", p: [1400, 120, -1700] }, 902);
+  net.from(1, state([1400, 120, -1700], { a: 0 }), 903);
+  assert.ok(!r.alive);
+  net.from(1, state([1400, 120, -1700]), 901);
+  assert.ok(!r.alive, "sent before the crash, arriving after");
+});
+
 test("a team is out when all its players are; the last team flying wins", () => {
   game.run(4000); // back on the runway
   net.from(1, { t: "out" });
@@ -199,17 +217,27 @@ test("a team is out when all its players are; the last team flying wins", () => 
   net.clear();
   net.from(2, { t: "out" });
   assert.equal(duel.state, "over");
-  assert.equal($("oTitle").textContent, "Your team wins!");
-  assert.deepEqual(net.sent("fin")[0], { t: "fin", sc: S.score });
-  assert.ok(!$("oAgain").classList.contains("hidden"), "we may go again");
+  assert.deepEqual(net.sent("fin")[0], {
+    t: "fin",
+    id: duel.net.match,
+    sc: S.score,
+    o: 0,
+    fl: [],
+  });
+  // Named only once everyone has said what they saw.
+  assert.equal($("oTitle").textContent, "Settling the result…");
+  assert.ok($("oAgain").classList.contains("hidden"));
 });
 
-test("the match goes on the group's board once every final score is in", () => {
+test("the result, and the group's board, once every final score is in", () => {
+  const id = duel.net.match;
+  net.from(1, { t: "fin", id, sc: 0, o: 1 });
+  net.from(2, { t: "fin", id, sc: 100, o: 1 });
+  assert.equal($("oTitle").textContent, "Settling the result…", "Di's is due");
   assert.ok($("oGroup").classList.contains("hidden"));
-  net.from(1, { t: "fin", sc: 0 });
-  net.from(2, { t: "fin", sc: 100 });
-  assert.ok($("oGroup").classList.contains("hidden"), "Di's is missing");
-  net.from(3, { t: "fin", sc: 300 });
+  net.from(3, { t: "fin", id, sc: 300, o: 0 });
+  assert.equal($("oTitle").textContent, "Your team wins!");
+  assert.ok(!$("oAgain").classList.contains("hidden"), "we may go again");
   assert.ok(!$("oGroup").classList.contains("hidden"));
   const [board] = Object.values(
     JSON.parse(w.localStorage.getItem("duelhippo.groups")),

@@ -50,7 +50,7 @@ export const touch = {
 const PREVENT = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"];
 
 // The game actions presses trigger; set by bindInput():
-// { startGame, setPause, toggleFull, dropBomb, flip, stepSpeed, toggleInvert,
+// { enter, togglePause, toggleFull, dropBomb, flip, stepSpeed, toggleInvert,
 //   pickPlane, stepPlane, fireMissile }
 let act = null;
 
@@ -76,12 +76,14 @@ function press(code) {
     act.stepSpeed(1);
     return;
   }
+  // Enter flies again, but only from the screens that offer it: the game
+  // decides which (game.js enterKey).
   if (game.state !== "play") {
-    if (code === "Enter") act.startGame(game.mode);
+    if (code === "Enter" || code === "NumpadEnter") act.enter();
     return;
   }
   if (code === "KeyP" || code === "Escape") {
-    act.setPause(!game.paused);
+    act.togglePause();
     return;
   }
   if (game.paused) return;
@@ -150,8 +152,20 @@ export function bindInput(actions) {
   act = actions;
 
   window.addEventListener("keydown", (e) => {
-    // Typing a room code is not flying.
-    if (e.target instanceof window.HTMLInputElement) return;
+    // Typing a room code (or picking from a list) is not flying; and Enter
+    // or Space on a focused menu button is that button's, not the game's
+    // too. The flight controls on screen (FIRE, AIM…) are no menu: they
+    // never take focus (below), and should one have it, Space still fires.
+    const t = e.target;
+    if (
+      t instanceof window.HTMLInputElement ||
+      t instanceof window.HTMLSelectElement ||
+      t instanceof window.HTMLTextAreaElement ||
+      (t instanceof window.HTMLButtonElement &&
+        !t.closest("#touchui") &&
+        (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space"))
+    )
+      return;
     capsLock = e.getModifierState("CapsLock");
     if (PREVENT.includes(e.code)) e.preventDefault();
     if (STEER.includes(e.code)) touch.flying = false;
@@ -226,6 +240,17 @@ export function bindInput(actions) {
   thr.addEventListener("pointerup", tend);
   thr.addEventListener("pointercancel", tend);
 
+  // The flight controls on screen never take the keyboard's focus, so a
+  // tap leaves Space (and the rest) with the game. Their own handlers act
+  // on pointerdown or click, which this does not stop.
+  for (const b of $("touchui").querySelectorAll("button")) {
+    b.tabIndex = -1;
+    b.addEventListener("pointerdown", (e) => e.preventDefault());
+  }
+  // And sound woken by the first touch or key after an interruption.
+  for (const ev of ["pointerdown", "keydown"])
+    window.addEventListener(ev, () => sfx.resume(), { passive: true });
+
   const fb = $("bFire");
   fb.addEventListener("pointerdown", (e) => {
     fb.setPointerCapture(e.pointerId);
@@ -245,7 +270,7 @@ export function bindInput(actions) {
   $("bCam").addEventListener("click", () => {
     game.camZoom = (game.camZoom + 1) % 2;
   });
-  $("bPause").addEventListener("click", () => act.setPause(!game.paused));
+  $("bPause").addEventListener("click", () => act.togglePause());
 
   // A sideways swipe across the scene changes plane, as < and > do: left
   // for the previous, right for the next. Not one that starts on a control.

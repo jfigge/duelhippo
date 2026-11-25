@@ -43,7 +43,7 @@ import { say } from "./msg.js";
 import { groundY } from "./world.js";
 import { P, aiming } from "./flight.js";
 import { enemies, killEnemy, ownsEnemy } from "./ai.js";
-import { remotes, solidRemotes } from "./remote.js";
+import { remotes } from "./remote.js";
 import { net, send, canHurt } from "./net/bus.js";
 import { v3, unit3 } from "./net/protocol.js";
 
@@ -67,10 +67,12 @@ const live = (t) => !!t && t.alive && !t.ghost && !t.gone;
 export const locked = () => !!lock.tgt && lock.t >= MSL.lock;
 
 // What can be locked: the flyers, and every other player's plane that can be
-// hurt.
+// hurt (remote.js solidRemotes, read straight off the map so that a frame
+// spent aiming builds no arrays).
 function* quarries() {
   for (const e of enemies) if (e.alive) yield e;
-  for (const r of solidRemotes()) if (canHurt(r.seat)) yield r;
+  for (const r of remotes.values())
+    if (r.alive && !r.ghost && canHurt(r.seat)) yield r;
 }
 
 // A target's name on the wire ("ms"): a seat, or "e" and a flyer's index.

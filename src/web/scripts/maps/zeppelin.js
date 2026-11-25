@@ -188,6 +188,9 @@ export default function build(kit) {
           s * 15,
         );
     const made = [p.geometry(), q.geometry()];
+    // Every carrier in this trim shares them, a team's too: a team field's
+    // going (world.js dispose) must leave them be.
+    for (const g of made) g.userData.shared = true;
     carriers.set(trim, made);
     return made;
   }
@@ -198,6 +201,7 @@ export default function build(kit) {
     side: THREE.DoubleSide,
   });
   const hullMat = shaded();
+  discs.userData.shared = hullMat.userData.shared = true;
   function carrier(trim) {
     const g = new THREE.Group(),
       [body, blur] = carrierGeometry(trim);
@@ -205,8 +209,19 @@ export default function build(kit) {
     return g;
   }
 
-  // The carriers: the two sides', and in a team game each team's.
-  const decks = [home, enemy];
+  // The carriers: the two sides', and in a team game each team's. `blocks`
+  // is each one's bulk, deck to gondola, as a box for the flyers to steer
+  // round (kit.avoider).
+  const decks = [home, enemy],
+    block = (d) => [
+      d.x - ZEP.hl,
+      d.x + ZEP.hl,
+      D - 46,
+      D,
+      d.z - ZEP.hw,
+      d.z + ZEP.hw,
+    ],
+    blocks = decks.map(block);
   put(group, carrier(0x55ffff), home.x, 0, home.z);
   put(group, carrier(0xff55ff), enemy.x, 0, enemy.z);
 
@@ -310,7 +325,7 @@ export default function build(kit) {
 
   // ── The enemy's airships, as targets (world.js makeTarget): built into
   // `g` along x, its origin at the gondola's keel. Each has its own
-  // materials, since a wreck is darkened.
+  // materials, since a wreck is darkened; the geometry is one for all.
   let ship = null;
   function shipGeometry() {
     const p = parts();
@@ -351,8 +366,32 @@ export default function build(kit) {
     }
     const blade = new THREE.BoxGeometry(0.3, 6, 0.6);
     ship = [p.geometry(), blade];
+    for (const g of ship) g.userData.shared = true;
     return ship;
   }
+  // Its shape, as built above: the envelope (a capsule 120 m long, 12 m
+  // round, its nose cap out to 62 m), the gondola and its guns, the fins
+  // and the engine pods.
+  const shipHit = kit.shape(
+    [
+      [-13, 13, 0.5, 6.8, -3.6, 3.6],
+      [7.2, 12, -0.1, 1.3, 3, 4.7],
+      [-8.8, -4, -0.1, 1.3, -4.7, -3],
+      [-60, -44, 5.5, 28.5, -0.45, 0.45],
+      [-60, -44, 16.55, 17.45, -11.5, 11.5],
+      [-18.2, -10.5, 5, 11, 8, 16],
+      [-18.2, -10.5, 5, 11, -16, -8],
+    ],
+    (x, y, z, pad) => {
+      const a = Math.max(0, Math.abs(x) - 48),
+        r = 12 + pad;
+      if (a * a + (y - 17) ** 2 + z * z < r * r) return true;
+      const nx = (x - 55.5) / (6.6 + pad),
+        ny = (y - 17) / (5.5 + pad),
+        nz = z / (5.5 + pad);
+      return nx * nx + ny * ny + nz * nz < 1;
+    },
+  );
   const kinds = {
     airship(g) {
       const [body, blade] = ship ?? shipGeometry();
@@ -361,31 +400,40 @@ export default function build(kit) {
       g.userData.props = [-1, 1].map((s) =>
         put(g, new THREE.Mesh(blade, dark), -18, 8, s * 13),
       );
-      return { r: 30, h: 30, hp: 14, pts: 300, name: "Airship" };
+      return { r: 30, h: 30, hp: 14, pts: 300, name: "Airship", hit: shipHit };
     },
   };
 
   // ── A frame of the map: the airships hold station, drifting a little,
   // their guns firing short bursts at a player within range; a wreck sinks
-  // into the cloud.
+  // into the cloud. They drift by the time since the game began (start),
+  // so in a team game they are where they are on every machine.
   const gun = new THREE.Vector3(),
     smoke = new THREE.Vector3();
+  let clock = 0;
+  // An airship's station and heading, the first time it is seen: as the
+  // map is entered and a game starts (so none turns about on the first
+  // frame of play), or as a town is built again mid-game.
+  function pose(t) {
+    const a = t.g.userData;
+    if (t.kind !== "airship" || a.x0 !== undefined) return;
+    a.x0 = t.x;
+    a.z0 = t.z;
+    a.ph = (t.x * 0.37) % (PI * 2);
+    a.yaw = t.x % 700 < 350 ? 0 : PI;
+    t.g.rotation.y = a.yaw;
+  }
   function tick(dt) {
+    clock += dt;
     for (const t of targets) {
       if (t.kind !== "airship") continue;
       const g = t.g,
         a = g.userData;
-      if (a.t === undefined) {
-        a.t = 0;
-        a.x0 = t.x;
-        a.z0 = t.z;
-        a.ph = (t.x * 0.37) % (PI * 2);
-        a.yaw = t.x % 700 < 350 ? 0 : PI;
+      pose(t);
+      if (a.cd === undefined) {
         a.cd = 1 + Math.random() * 2;
         a.burst = 0;
-        g.rotation.y = a.yaw;
       }
-      a.t += dt;
       if (!t.alive) {
         if (!g.visible) continue;
         g.position.y -= 7 * dt;
@@ -409,11 +457,11 @@ export default function build(kit) {
         continue;
       }
       // About 45 m fore and aft, 20 m abeam, over two minutes or so.
-      t.x = a.x0 + 45 * Math.sin(a.t * 0.055 + a.ph) - 45 * Math.sin(a.ph);
-      t.z = a.z0 + 20 * Math.sin(a.t * 0.041);
+      t.x = a.x0 + 45 * Math.sin(clock * 0.055 + a.ph) - 45 * Math.sin(a.ph);
+      t.z = a.z0 + 20 * Math.sin(clock * 0.041);
       g.position.x = t.x;
       g.position.z = t.z;
-      g.rotation.y = a.yaw + 0.06 * Math.sin(a.t * 0.03 + a.ph);
+      g.rotation.y = a.yaw + 0.06 * Math.sin(clock * 0.03 + a.ph);
       for (const pr of a.props) pr.rotation.x += 30 * dt;
       // The gun on the side facing the player, in bursts of three.
       if ((a.cd -= dt) > 0) continue;
@@ -439,6 +487,7 @@ export default function build(kit) {
     f.hw = ZEP.hw;
     f.g.add(carrier(c.plane[2]));
     decks.push(f);
+    blocks.push(block(f));
     return [];
   }
 
@@ -448,16 +497,15 @@ export default function build(kit) {
       height,
       floor: () => 0,
       crash,
-      avoid: kit.avoider(height, 0),
+      avoid: kit.avoider(height, 0, D, 15, blocks),
       brake: ZEP.brake,
-      deck: true,
       dust: 0xf4f8fc,
       town: FLEET,
       kinds,
       tick,
       field,
       unfield: () => {
-        decks.length = 2;
+        decks.length = blocks.length = 2;
       },
       // A team's flag stands on its deck's edge, clear of the planes
       // rolling down the middle.
@@ -476,5 +524,12 @@ export default function build(kit) {
     fog: [1200, 6000],
     below: 0xe6eef5,
     light: [1.1, 1.05],
+    enter() {
+      for (const t of targets) pose(t);
+    },
+    start() {
+      clock = 0;
+      for (const t of targets) pose(t);
+    },
   };
 }

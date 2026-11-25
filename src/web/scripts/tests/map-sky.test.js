@@ -24,7 +24,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadPort } from "./harness.js";
+import { loadPort, seededRandom } from "./harness.js";
 
 const game = await loadPort(3);
 const { w, duel } = game;
@@ -92,7 +92,6 @@ test("Sky islands: the plane starts on HOME's island, and takes off", () => {
 });
 
 test("Sky islands: rock inside, air under, the cloud floor below", () => {
-  assert.equal(land.deck, true);
   for (const R of [HOME, EB]) {
     const top = groundY(R.x, R.z);
     // Flat over the whole runway.
@@ -163,17 +162,6 @@ test("Sky islands: a landing on HOME's island stops on it", () => {
   assert.equal(P.pos.y, top + GEAR);
 });
 
-test("Sky islands: rolling off the runway slowly falls", () => {
-  game.start("free");
-  game.poke((P) => {
-    P.pos.x = HOME.x + HOME.hl - 10;
-    P.speed = 20;
-  });
-  game.run(1000);
-  assert.equal(P.alive, false);
-  assert.match(msg(), /Rolled off the deck/);
-});
-
 test("Sky islands: the approaches along the lane are clear", () => {
   // Between the runway islands nothing reaches the height of EB's runway
   // (the lower of the two) less 25 m, but what a plane flies under.
@@ -230,38 +218,55 @@ test("Sky islands: the town stands on its chain, the hippos on theirs", () => {
 });
 
 test("Sky islands: the enemy flyers hunt round the islands", () => {
-  game.start("free");
-  duel.S.wave = 3; // five at once
+  // High (over the islands) and low (skirting the town island's edges, where
+  // a careless avoider turns back into the rock), each from its own random
+  // numbers, so what it finds is not down to the tests before it.
   let seen = 0,
-    rocks = 0,
-    t = 0;
-  const was = duel.enemies.map((e) => e.alive);
-  // The player, flying a slow circuit over the town (under the high
-  // islands, over the chain) and kept whole, for them to hunt.
-  for (let i = 0; i < 1500; i++) {
-    t += 0.1;
-    game.poke((P) => {
-      P.alive = true;
-      P.dmg = 0;
-      P.grounded = false;
-      P.pos.set(1400 + Math.cos(t * 0.2) * 600, 320, Math.sin(t * 0.2) * 100);
-      P.speed = 50;
-      P.sink = 0;
-    });
-    game.run(100);
-    duel.enemies.forEach((e, k) => {
-      if (
-        was[k] &&
-        !e.alive &&
-        groundY(e.pos.x, e.pos.z, e.pos.y) > e.pos.y - 3
-      )
-        rocks++;
-      if (!was[k] && e.alive) seen++;
-      was[k] = e.alive;
-    });
-  }
-  assert.ok(seen >= 5, `${seen} flew`);
-  assert.ok(rocks <= 1, `${rocks} flew into an island or the clouds`);
+    rocks = 0;
+  for (const [alt, seeds] of [
+    [320, [14]],
+    [130, [1, 2, 3, 4, 5, 6, 7, 8, 9]],
+  ])
+    for (const seed of seeds) {
+      Math.random = seededRandom(seed);
+      for (const e of duel.enemies) e.t = 0;
+      pick("sky");
+      game.start("free");
+      assert.equal(mapNow(), "sky");
+      duel.S.wave = 3; // five at once
+      let t = 0;
+      const was = duel.enemies.map((e) => e.alive);
+      // The player, flying a slow circuit over the town and kept whole,
+      // for them to hunt.
+      for (let i = 0; i < 900; i++) {
+        t += 0.1;
+        game.poke((P) => {
+          P.alive = true;
+          P.dmg = 0;
+          P.grounded = false;
+          P.pos.set(
+            1400 + Math.cos(t * 0.2) * 600,
+            alt,
+            Math.sin(t * 0.2) * 100,
+          );
+          P.speed = 50;
+          P.sink = 0;
+        });
+        game.run(100);
+        duel.enemies.forEach((e, k) => {
+          if (
+            was[k] &&
+            !e.alive &&
+            groundY(e.pos.x, e.pos.z, e.pos.y) > e.pos.y - 3
+          )
+            rocks++;
+          if (!was[k] && e.alive) seen++;
+          was[k] = e.alive;
+        });
+      }
+    }
+  assert.ok(seen >= 30, `${seen} flew`);
+  assert.equal(rocks, 0, `${rocks} flew into an island or the clouds`);
 });
 
 test("Sky islands: a team field is a floating island, flat round its runway", () => {
@@ -296,6 +301,5 @@ test("back to the Countryside: nothing plugged in", () => {
   game.start("free");
   assert.equal(mapNow(), "field");
   assert.equal(land.height, null);
-  assert.equal(land.deck, false);
   assert.deepEqual([P.pos.x, P.pos.y], [-190, GEAR]);
 });

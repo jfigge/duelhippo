@@ -93,13 +93,24 @@ export function ensureEnemies(n) {
 // inside something starts clear of it. On the Countryside `below` is y
 // itself and nothing is moved.
 const below = (y) => (land.ceil ? Math.min(y, land.ceil - 70) : y);
+// The ground's top within 2·CLEAR m of a spot (a 5 × 5 grid round it), at
+// height y: a spawn beside a wall, or heading at one close by, is as bad
+// as one inside it. A plane needs about 100 m to turn away.
+const CLEAR = 40;
+function topNear(x, z, y) {
+  let g = 0;
+  for (let i = -2; i <= 2; i++)
+    for (let k = -2; k <= 2; k++)
+      g = Math.max(g, groundY(x + i * CLEAR, z + k * CLEAR, y));
+  return g;
+}
 function clearOf(e) {
   if (!land.height) return;
-  const g = groundY(e.pos.x, e.pos.z, e.pos.y);
+  const g = topNear(e.pos.x, e.pos.z, e.pos.y);
   if (g <= e.pos.y - 40) return;
-  // Inside something: over the boulevard in the City, else above it.
+  // In or beside something: over the boulevard in the City, else above it.
   if (land.ceil) e.pos.z = 0;
-  else e.pos.y = g + 60;
+  else e.pos.y = topNear(e.pos.x, e.pos.z, Infinity) + 60;
 }
 
 // Whose machine decides what happens to a flyer: this one's, except in a
@@ -151,12 +162,17 @@ const EB_ = basis(new Q());
 const AIM = new V();
 
 // Who a flyer hunts: the player — or, in a team game, whichever plane in the
-// air is nearest. Ghosts are not worth the bullets.
+// air is nearest. Ghosts are not worth the bullets: with nobody else up, it
+// hunts NOBODY, which is never alive, and patrols.
+const NOBODY = { alive: false, grounded: true, pos: new V(), vel: new V() };
 function quarry(e) {
   if (!net.on) return P;
-  let best = P,
-    bd =
-      P.alive && !P.grounded && !P.ghost ? P.pos.distanceTo(e.pos) : Infinity;
+  let best = NOBODY,
+    bd = Infinity;
+  if (P.alive && !P.grounded && !P.ghost) {
+    best = P;
+    bd = P.pos.distanceTo(e.pos);
+  }
   for (const r of solidRemotes()) {
     if (r.grounded) continue;
     const d = r.pos.distanceTo(e.pos);
@@ -226,8 +242,21 @@ export function updEnemy(e, dt) {
     // `des` has a vector of its own. The prototype's was `to`, which is the
     // shared `tv`, which the turn below overwrites with the plane's own
     // heading before using it: so its flyers never turned in Free flight.
-    const des = AIM.copy(to).normalize(),
-      ang = Math.acos(clamp(b.f.dot(des), -1, 1));
+    const des = AIM.copy(to).normalize();
+    // A target behind is turned to level. The shortest way round passes
+    // near straight down, and the ±0.7 clamp below undid each frame's turn:
+    // the flyer held a steep dive, its heading barely changing, into the
+    // ground or under an island. (The harness makes the same fix to the
+    // prototype: PROTO_FIXES.)
+    if (
+      b.f.dot(des) < 0 &&
+      des.y < 0 &&
+      Math.abs(des.x) + Math.abs(des.z) > 1e-6
+    ) {
+      des.y = 0;
+      des.normalize();
+    }
+    const ang = Math.acos(clamp(b.f.dot(des), -1, 1));
     const nf = tv2.copy(b.f);
     if (ang > 1e-4)
       nf.applyAxisAngle(

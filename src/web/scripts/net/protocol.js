@@ -27,14 +27,17 @@
 // seat); hits are decided by whoever is hit (or, for buildings, whoever
 // dropped the bomb) and reported to everyone.
 //
-// Lobby (the organiser is the lowest seat in the room)
+// Lobby (the organiser is whoever has been in the room longest)
 //   hi     {v, h, n}                   to each player met: version, hash, name
 //   setup  {v, layout, mode, map, ff, speed, roster: [[seat, team]]}
 //                                      organiser: the match on offer
 //   team   {team}                      to the organiser: put me on that team
-//   board  {g, dogfight, flag, endless} each: its copy of the group board
+//   board  {g, mode, list}             each: its copy of one mode of the
+//                                      group board (one mode a message keeps
+//                                      it under the server's MAX_MESSAGE)
 //   go     {id}                        organiser: start (all count 3-2-1)
-//   bad    {text}                      versions differ, or already playing
+//   bad    {text}                      organiser, to a newcomer: a different
+//                                      version, or a match already on
 // Play
 //   s      packed state (below)        each, 20 a second, fast
 //   f      {o, d, s}                   I fired a round: origin, direction, speed
@@ -53,15 +56,32 @@
 //                                      on to the plane in seat `to`
 //   ek     {i, by}                     my flyer i is down; by: the seat that
 //                                      gets the kill
-//   fin    {sc}                        my match is over; my final score
+//   fin    {id, sc, o, fl}             my match is over: its id, my final
+//                                      score, whether I was out (o: 1), and
+//                                      the teams whose flags I saw fall; the
+//                                      result is settled from everyone's
+//   bq     {g}                         send me your copy of group g's
+//                                      board (I have only now worked it out)
 //   bye    {}                          leaving
+// Link (net/link.js)
+//   rs     {ms: [message]}             sure messages resent through the
+//                                      server after a data channel died
+// Every message also carries the sender's running count, sq (sure) or fq
+// (fast); the link reads it and takes it off.
 //
 // h is a player's hash and n their name (scores.js); g is the group board's
 // id, a hash of every player's hash.
 
 import { PLANES } from "../constants.js";
 
-export const PROTO = 5;
+// Bump it whenever a message changes shape, and whenever the maps or planes
+// change (constants.js MAPS, PLANES): builds with different maps would fly
+// different worlds. tests/net-protocol.test.js holds each version's.
+export const PROTO = 6;
+
+// Messages worth nothing late: shown (or, for a flyer, counted) as they
+// arrive, so net/link.js does not resend them after a data channel dies.
+export const TRANSIENT = new Set(["f", "b", "ef", "ms", "eh"]);
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const r4 = (v) => Math.round(v * 10000) / 10000;

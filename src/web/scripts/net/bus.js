@@ -46,8 +46,9 @@ export const net = {
   onFlag: null,
 };
 
-// To everyone else. `fast` messages (state updates) may be dropped and
-// arrive out of order; the rest (events) arrive, in order.
+// To everyone else. `fast` messages (state updates) may be dropped, and one
+// that arrives after a newer one is dropped too; the rest (events) arrive,
+// and almost always in order (net/link.js).
 export function send(msg, fast = false) {
   if (net.on && net.link) net.link.send(msg, fast);
 }

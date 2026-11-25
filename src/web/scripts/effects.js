@@ -28,9 +28,25 @@ import { sfx } from "./audio.js";
 export const parts = [];
 const pGeo = new THREE.IcosahedronGeometry(1, 0);
 
+// An idle particle, or none. Searched from where the last one was found, so
+// a big burst does not rescan the busy front of the pool for every puff and
+// allocates nothing. Whether one is found (and so how many random numbers a
+// puff draws) is as the prototype's first-idle search had it.
+let next = 0;
+function idle() {
+  for (let k = 0, n = parts.length; k < n; k++) {
+    const i = (next + k) % n;
+    if (!parts[i].on) {
+      next = i;
+      return parts[i];
+    }
+  }
+  return null;
+}
+
 export function puff(pos, color, n, spd, size, life, rise = 0) {
   for (let i = 0; i < n; i++) {
-    let p = parts.find((p) => !p.on);
+    let p = idle();
     if (!p) {
       if (parts.length > 360) return;
       p = {

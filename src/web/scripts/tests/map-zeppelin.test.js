@@ -24,7 +24,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadPort } from "./harness.js";
+import { loadPort, seededRandom } from "./harness.js";
 
 const game = await loadPort(3);
 const { w, duel } = game;
@@ -257,46 +257,197 @@ test("Zeppelins: bombs bring an airship down, and it sinks into the cloud", () =
   assert.equal(t.g.visible, false, "gone into the cloud");
 });
 
-test("Zeppelins: the enemy flyers hunt round their carrier without hitting it", () => {
+// A game of its own for a test of chance: the Zeppelins, its own random
+// numbers, and the flyers' patrol clocks (which carry over from game to
+// game) from nought, so what it finds is not down to the tests before it.
+function fresh(seed) {
+  pick("zeppelin");
+  for (const e of duel.enemies) e.t = 0;
+  Math.random = seededRandom(seed);
   game.start("free");
+  assert.equal(mapNow(), "zeppelin");
+}
+
+test("Zeppelins: the enemy flyers hunt round their carrier without hitting it", () => {
+  // Over several games, each from its own random numbers (so what it finds
+  // is not down to the tests before it), none flies into a carrier.
   let seen = 0,
     crashed = 0,
-    near = 0,
-    t = 0;
-  const was = duel.enemies.map((e) => e.alive);
-  // The player, kept flying a circuit round the enemy's carrier at its
-  // hull's height and kept whole, for the flyers to hunt.
-  for (let i = 0; i < 1500; i++) {
-    t += 0.1;
-    game.poke((P) => {
-      P.alive = true;
-      P.dmg = 0;
-      P.grounded = false;
-      P.pos.set(
-        EB.x - 250 + Math.cos(t * 0.15) * 600,
-        250,
-        Math.sin(t * 0.15) * 200,
-      );
-      P.speed = 50;
-      P.sink = 0;
-    });
-    game.run(100);
-    duel.enemies.forEach((e, k) => {
-      if (e.alive && Math.abs(e.pos.x - EB.x) < 250 && Math.abs(e.pos.z) < 60)
-        near++;
-      if (
-        was[k] &&
-        !e.alive &&
-        groundY(e.pos.x, e.pos.z, e.pos.y) > e.pos.y - 3
-      )
-        crashed++;
-      if (!was[k] && e.alive) seen++;
-      was[k] = e.alive;
-    });
+    near = 0;
+  for (const seed of [21, 22, 23, 24]) {
+    fresh(seed);
+    let t = 0;
+    const was = duel.enemies.map((e) => e.alive);
+    // The player, kept flying a circuit round the enemy's carrier at its
+    // hull's height and kept whole, for the flyers to hunt.
+    for (let i = 0; i < 1500; i++) {
+      t += 0.1;
+      game.poke((P) => {
+        P.alive = true;
+        P.dmg = 0;
+        P.grounded = false;
+        P.pos.set(
+          EB.x - 250 + Math.cos(t * 0.15) * 600,
+          250,
+          Math.sin(t * 0.15) * 200,
+        );
+        P.speed = 50;
+        P.sink = 0;
+      });
+      game.run(100);
+      duel.enemies.forEach((e, k) => {
+        if (e.alive && Math.abs(e.pos.x - EB.x) < 250 && Math.abs(e.pos.z) < 60)
+          near++;
+        if (
+          was[k] &&
+          !e.alive &&
+          groundY(e.pos.x, e.pos.z, e.pos.y) > e.pos.y - 3
+        )
+          crashed++;
+        if (!was[k] && e.alive) seen++;
+        was[k] = e.alive;
+      });
+    }
   }
-  assert.ok(seen >= 2, `${seen} flew`);
+  assert.ok(seen >= 8, `${seen} flew`);
   assert.ok(near > 0, "round the carrier");
-  assert.ok(crashed <= 1, `${crashed} flew into a carrier or the cloud`);
+  assert.equal(crashed, 0, `${crashed} flew into a carrier or the cloud`);
+});
+
+test("Zeppelins: flyers chasing a plane under and along a carrier miss its hull", () => {
+  // The quarry weaves round the enemy's carrier under its keel (240 m)
+  // and along its flanks just under the deck (290 m), so its hunters climb
+  // and dive about the hull; over several games none flies into it.
+  let seen = 0,
+    crashed = 0;
+  for (const y of [240, 290])
+    for (let seed = 100; seed < 110; seed++) {
+      fresh(seed);
+      let t = 0;
+      const was = duel.enemies.map((e) => e.alive);
+      for (let i = 0; i < 1500; i++) {
+        t += 0.1;
+        game.poke((P) => {
+          P.alive = true;
+          P.dmg = 0;
+          P.grounded = false;
+          P.pos.set(EB.x + Math.cos(t * 0.2) * 300, y, Math.sin(t * 0.4) * 60);
+          P.speed = 50;
+          P.sink = 0;
+        });
+        game.run(100);
+        duel.enemies.forEach((e, k) => {
+          if (
+            was[k] &&
+            !e.alive &&
+            groundY(e.pos.x, e.pos.z, e.pos.y) > e.pos.y - 3
+          )
+            crashed++;
+          if (!was[k] && e.alive) seen++;
+          was[k] = e.alive;
+        });
+      }
+    }
+  assert.ok(seen >= 12, `${seen} flew`);
+  assert.equal(crashed, 0, `${crashed} flew into a carrier`);
+});
+
+// A point in an airship's own frame (along x, origin at its keel) in the
+// world, as it is turned now.
+function onShip(t, x, y, z) {
+  const a = t.g.rotation.y;
+  return t.g.position
+    .clone()
+    .set(
+      t.x + x * Math.cos(a) + z * Math.sin(a),
+      t.y + y,
+      t.z - x * Math.sin(a) + z * Math.cos(a),
+    );
+}
+
+test("Zeppelins: an airship is hit where it is, nose to fins", () => {
+  game.start("free");
+  game.run(2000);
+  for (const t of targets) {
+    assert.equal(typeof t.hit, "function");
+    const at = (x, y, z, pad) => t.hit(t, onShip(t, x, y, z), pad);
+    assert.ok(at(61, 17, 0), "the nose, 61 m out");
+    assert.ok(at(-58, 26, 0), "the top fin");
+    assert.ok(at(-50, 17, 10), "a side fin");
+    assert.ok(at(0, 28, 0) && at(40, 17, -11), "the envelope");
+    assert.ok(at(0, 2, 0), "the gondola");
+    assert.ok(!at(0, 17, 20), "abeam, clear of it");
+    assert.ok(!at(-58, 26, 4), "beside the fin");
+    assert.ok(!at(70, 17, 0) && !at(0, -2, 0), "ahead of it, under it");
+    assert.ok(at(0, 17, 20, 12), "a bomb's burst reaches it");
+  }
+});
+
+test("Zeppelins: flying into an airship's nose, far out from its middle", () => {
+  game.start("free");
+  const t = targets[0];
+  game.run(100);
+  // Head-on at the nose, 61 m from the middle (its old reach was 30 m).
+  const nose = onShip(t, 75, 17, 0),
+    a = t.g.rotation.y;
+  game.poke((P) => {
+    P.grounded = false;
+    P.alive = true;
+    P.pos.copy(nose);
+    // Nose along the airship's −x, back at it.
+    P.q.setFromAxisAngle(P.pos.clone().set(0, 1, 0), a + Math.PI / 2);
+    P.speed = 40;
+    P.thr = 0.5;
+    P.sink = 0;
+  });
+  game.run(1000);
+  assert.equal(P.alive, false);
+  assert.match(msg(), /Flew into the airship/);
+});
+
+test("Zeppelins: an airship is on its heading from the first frame", () => {
+  game.start("free");
+  const at = targets.map((t) => t.g.rotation.y);
+  assert.ok(
+    at.some((y) => Math.abs(y - Math.PI) < 1e-9),
+    "some face −x",
+  );
+  game.run(50);
+  targets.forEach((t, i) =>
+    assert.ok(
+      Math.abs(t.g.rotation.y - at[i]) < 0.07,
+      `turned ${t.g.rotation.y}`,
+    ),
+  );
+});
+
+test("Zeppelins: the airships drift by the time since the game began", () => {
+  const where = () => targets.map((t) => [t.x, t.z, t.g.rotation.y]);
+  game.start("free");
+  game.run(4000);
+  const first = where();
+  game.run(9000);
+  game.start("free");
+  game.run(4000);
+  where().forEach((p, i) =>
+    p.forEach((v, k) => assert.ok(Math.abs(v - first[i][k]) < 1e-6, `${v}`)),
+  );
+});
+
+test("Zeppelins: a town rebuilt frees its own, not the airships' shared parts", () => {
+  game.start("free");
+  const body = targets[0].g.children[0].geometry;
+  assert.equal(body.userData.shared, true);
+  assert.equal(
+    targets[1].g.children[0].geometry,
+    body,
+    "one geometry for every airship",
+  );
+  let freed = false;
+  body.addEventListener("dispose", () => (freed = true));
+  game.start("free");
+  assert.equal(freed, false);
+  assert.equal(targets[0].g.children[0].geometry, body);
 });
 
 test("Zeppelins: team games put a carrier at every field, 2 to 8 teams", () => {
@@ -334,7 +485,6 @@ test("back to the Countryside: nothing of the Zeppelins left plugged in", () => 
   assert.equal(mapNow(), "field");
   assert.equal(land.height, null);
   assert.equal(land.tick, null);
-  assert.equal(land.deck, false);
   assert.equal(HOME.hl, 230);
   assert.deepEqual([P.pos.x, P.pos.y], [-190, GEAR]);
   assert.equal(duel.targets[0].kind, "tanks");

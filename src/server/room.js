@@ -35,7 +35,8 @@
 // messages the server writes itself are these:
 //
 //   {t:"room", code, seat, peers}  you are in room `code`, in `seat`; `peers`
-//                                  are the seats already there
+//                                  are the seats already there, in the
+//                                  order their players came
 //   {t:"peer", seat}               a player has joined, in `seat`
 //   {t:"left", seat}               the player in `seat` has gone
 //   {t:"error", code, text}        and then the socket closes
@@ -75,9 +76,10 @@ export const CLOSE = {
 };
 
 // A message a player may send through the room: text, short. A game state
-// update is about 250 bytes; 8 KB leaves room for a WebRTC offer and a
-// group scoreboard.
-export const MAX_MESSAGE = 8192;
+// update is about 250 bytes and a WebRTC offer a few KB; the longest is one
+// mode of a nine-player group scoreboard (scores.js), ten matches of nine
+// hashes and names, about 9 KB.
+export const MAX_MESSAGE = 16384;
 
 // A flood guard rather than a quota: a relayed player sends about 40
 // messages a second (one copy, however many it is for), so 120 is a
@@ -108,6 +110,30 @@ export function admit(kind, present) {
     close: CLOSE.full,
     text: `That game already has ${MAX_SEATS} players.`,
   };
+}
+
+// The order the players in a room came in: the lobby's organiser is the
+// first of them, so a newcomer given a low free seat never takes over.
+// `players` is [{seat, at}], `at` from nextArrival; a seat without one sorts
+// first, by seat.
+export const arrivalOrder = (players) =>
+  [...players]
+    .sort((a, b) => (a.at ?? -1) - (b.at ?? -1) || a.seat - b.seat)
+    .map((p) => p.seat);
+
+// The newcomer's place in that order: after everyone here. Counted from the
+// players present, so a room keeps no other state.
+export const nextArrival = (players) =>
+  players.reduce((n, p) => Math.max(n, (p.at ?? -1) + 1), 0);
+
+// The code in a /join/ path, decoded; null for one that is not a code (or
+// not even valid percent-encoding).
+export function joinCode(segment) {
+  try {
+    return normaliseCode(decodeURIComponent(segment));
+  } catch {
+    return null;
+  }
 }
 
 // Where a player's message goes, and what it becomes on the way: the seats

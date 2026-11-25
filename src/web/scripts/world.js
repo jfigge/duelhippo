@@ -28,10 +28,11 @@
 // seeded Math.random lays the world out exactly as the prototype did — the
 // equivalence test relies on that.
 //
-// That world is the Countryside map. The others (maps.js: City, Sea) are
-// built on demand from their own seeded random numbers, never Math.random,
-// and plug into the hooks below (`land`); while it is the Countryside, every
-// hook is null and the world is the prototype's.
+// That world is the Countryside map. The others (maps.js: the City and the
+// Sea; maps/: Canyon, Arctic, Volcano, Sky islands, Zeppelins, Storm and
+// Night) are built on demand from their own seeded random numbers, never
+// Math.random, and plug into the hooks below (`land`); while it is the
+// Countryside, every hook is null and the world is the prototype's.
 
 import * as THREE from "three";
 import { V, Q, PI, AY, rnd, clamp, tv2 } from "./util.js";
@@ -47,11 +48,11 @@ import { TEAM, fieldSpots } from "./net/teams.js";
 
 // The map in play, as the simulation sees it (maps.js fills it in; all
 // null on the Countryside). `height` is the ground's height, counting what
-// stands on it (towers, decks): whatever is under it is solid. `floor` is
-// the bare ground, for the camera. `crash` names what a crash at a point
-// hit; `brake` is how hard a plane stops on a runway, throttle idle; `deck`
-// is set where the runways are flight decks, with nothing round them to
-// roll onto; `ceil` is the cloud ceiling's height; `dust` the colour a
+// stands on it (towers, decks): whatever is under it is solid, and a
+// rolling plane meets a step in it as a wall and a drop as an edge
+// (flight.js). `floor` is the bare ground, for the camera. `crash` names
+// what a crash at a point hit; `brake` is how hard a plane stops on a
+// runway, throttle idle; `ceil` is the cloud ceiling's height; `dust` the colour a
 // round kicks up where it lands; `avoid` steers a flyer round what it would
 // fly into (ai.js), and `agile` scales how hard it can turn.
 export const land = {
@@ -59,7 +60,6 @@ export const land = {
   floor: null,
   crash: null,
   brake: 7,
-  deck: false,
   ceil: 0,
   dust: 0xb9a47c,
   avoid: null,
@@ -456,7 +456,10 @@ export function syncShadow(sh, pos, on) {
 export const targets = [];
 function makeTarget(kind, x, side, z = 0, y = groundY(x, z)) {
   const g = new THREE.Group();
-  let r, h, hp, pts, name;
+  // `hit`, if the kind has one, is its real shape: hit(t, p, pad) says
+  // whether world point p is in it, grown by pad m. Without one a target is
+  // the cylinder r, h (and floor) below, as the prototype's were.
+  let r, h, hp, pts, name, hit;
   if (kind === "flag") {
     // A team's flag (Bomb the flag): three bombs, or a long burst of fire.
     const c = TEAM[side % TEAM.length];
@@ -506,7 +509,7 @@ function makeTarget(kind, x, side, z = 0, y = groundY(x, z)) {
     pts = 100;
     name = "Fuel depot";
   } else if (land.kinds[kind]) {
-    ({ r, h, hp, pts, name } = land.kinds[kind](g));
+    ({ r, h, hp, pts, name, hit } = land.kinds[kind](g));
   } else {
     put(g, box(20, 12, 20, 0xc9b48a), 0, 6, 0);
     put(g, box(22, 1.5, 22, 0xb03aa0), 0, 12.7, 0);
@@ -537,21 +540,41 @@ function makeTarget(kind, x, side, z = 0, y = groundY(x, z)) {
     alive: true,
     smokeT: rnd(1),
     side,
+    ...(hit ? { hit } : {}),
   };
 }
 // `defs` is the map's town (TDEF on the Countryside) in a one-player game
 // (and Endless enemies). Bomb the flag passes one [kind, x, team, z] per
 // team (flagDefs).
 export function buildTargets(defs = land.town) {
-  for (const t of targets) scene.remove(t.g);
+  for (const t of targets) {
+    scene.remove(t.g);
+    dispose(t.g);
+  }
   targets.length = 0;
   for (const d of defs) targets.push(makeTarget(d[0], d[1], d[2], d[3], d[4]));
 }
+// What `root` owns on the GPU, freed once it is gone from the scene for
+// good. A geometry or material flagged `userData.shared` is used elsewhere
+// too (a map's one airship or lamp for many) and is left alone.
+const SHARED = (x) => x.userData && x.userData.shared;
+export function dispose(root) {
+  root.traverse((o) => {
+    if (o.geometry && !SHARED(o.geometry)) o.geometry.dispose();
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of ms) if (m && !SHARED(m)) m.dispose();
+  });
+}
+// A wreck goes dark: its own materials, not a shared one (Night's lit
+// windows, all one material) nor one that glows, which would put out the
+// same light on every other building. Nothing on the Countryside glows.
 function wreck(t) {
   t.alive = false;
   t.g.scale.y = 0.18;
   t.g.traverse((o) => {
-    if (o.material && o.material.color) o.material.color.setHex(0x3b3530);
+    const m = o.material;
+    if (m && m.color && !SHARED(m) && !(m.emissive && m.emissive.getHex()))
+      m.color.setHex(0x3b3530);
   });
   boom(tv2.set(t.x, t.y + t.h * 0.5, t.z).clone(), true);
 }
@@ -644,7 +667,10 @@ export function buildFields(n) {
 }
 
 export function clearFields() {
-  for (const f of fields) scene.remove(f.g);
+  for (const f of fields) {
+    scene.remove(f.g);
+    dispose(f.g);
+  }
   fields.length = 0;
   for (const s of fieldSolids) {
     const i = solids.indexOf(s);
@@ -734,7 +760,7 @@ export function scareHippo(h) {
   h.g.visible = false;
   h.t = 25;
   S.score = Math.max(0, S.score - 50);
-  puff(tv2.set(h.x, 3, h.z), 0x9a95b8, 8, 10, 1, 0.8, 4);
+  puff(tv2.set(h.x, h.g.position.y + 3, h.z), 0x9a95b8, 8, 10, 1, 0.8, 4);
   say("Leave the hippos alone!  −50", 1.8);
 }
 export function updHippos(dt) {

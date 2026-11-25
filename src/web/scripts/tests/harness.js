@@ -126,6 +126,11 @@ const PROTO_FIXES = [
   // Free-flight enemy flyers never turned: `des` was `to`, the shared `tv`,
   // which the turn overwrote with the flyer's own heading (ai.js updEnemy).
   ["const des = to.normalize(),", "const des = to.clone().normalize(),"],
+  // A target behind is turned to level, not dived at (ai.js updEnemy).
+  [
+    "const des = to.clone().normalize(), ang =",
+    "const des = to.clone().normalize(); if (b.f.dot(des) < 0 && des.y < 0 && Math.abs(des.x) + Math.abs(des.z) > 1e-6) { des.y = 0; des.normalize(); } const ang =",
+  ],
 ];
 function fixPrototype(src) {
   for (const [from, to] of PROTO_FIXES) {

@@ -134,6 +134,7 @@ kbd {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   min-width: 3.2ch;
+  white-space: nowrap;
 }
 .row.big b {
   font-size: 24px;
@@ -661,6 +662,25 @@ body.touch #card {
   font-size: 14px;
   padding: 6px 10px;
 }
+/* A landscape phone: the throttle slider shows the throttle already, and
+   without its bar the card (six rows on the course) clears the stick at
+   full speed; shorter screens tighten the rows below. */
+@media (max-height: 520px) {
+  body.touch #card .bar:has(#bThr) {
+    display: none;
+  }
+}
+/* The shortest phones: tighter rows, so a card with an extra row (a game
+   speed, two or three teams) still clears the stick. */
+@media (max-height: 400px) {
+  body.touch #card {
+    line-height: 1.15;
+    padding: 5px 10px;
+  }
+  body.touch #card .row.big b {
+    font-size: 20px;
+  }
+}
 body.touch #strip {
   top: calc(10px + var(--st));
   bottom: auto;
@@ -754,7 +774,9 @@ h2 {
   gap: 12px;
   margin: 16px 0 8px;
 }
-/* Each card wears its accent (--c) on its border, glow and heading. */
+/* Each card wears its accent (--c) on its border, glow and heading. Side by
+   side the cards differ in height; their text starts at the top rather than
+   floating to the middle, as a button's would. */
 .mode {
   --c: var(--cy);
   padding: 14px 16px 15px;
@@ -764,6 +786,9 @@ h2 {
   border-radius: 14px;
   box-shadow: 0 0 18px color-mix(in srgb, var(--c) 18%, transparent);
   min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
 }
 .mode:hover {
   background: rgba(26, 32, 62, 0.92);
@@ -998,10 +1023,42 @@ body.touch .tk {
     color: var(--yl);
   }
 }
-/* A phone held sideways (about 375–430 px tall): every menu fits on one
-   screen without scrolling. The box takes the width instead of the height:
-   the title on one line beside a smaller mascot, the three ways to play side
-   by side, and the intro left out. */
+/* A short desktop window (the default Electron window is 1280 × 732 inside
+   its title bar): the title card's intro and map note are left out and its
+   spacing tightened, so the footer (best score, Controls, Scores, settings)
+   is on screen at launch; long tables scroll inside their card. */
+@media (max-height: 820px) {
+  #titleBody .intro,
+  #titleBody .pickNote:not(.testing) {
+    display: none;
+  }
+  .modes {
+    margin: 12px 0 6px;
+  }
+  .mode {
+    padding: 11px 14px 12px;
+  }
+  #titleBody .foot {
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+  .box {
+    padding: 22px 26px;
+  }
+  .board {
+    max-height: 38vh;
+    overflow: auto;
+  }
+  /* Under the over card's score sheet, room for its ways on. */
+  #over .board {
+    max-height: 30vh;
+  }
+}
+/* A phone held sideways (about 360–430 px tall): the primary actions of
+   every menu are on one screen without scrolling. The box takes the width
+   instead of the height: the title on one line beside a smaller mascot, the
+   four ways to play side by side with their blurbs cut to two lines, the
+   intros left out, and the key list in two columns. */
 @media (max-height: 520px) {
   .ov {
     padding: calc(8px + var(--st)) calc(12px + var(--sr)) calc(8px + var(--sb))
@@ -1014,9 +1071,6 @@ body.touch .tk {
   .box p {
     margin: 6px 0;
     font-size: 15px;
-  }
-  #titleBody > p:not(.rot) {
-    display: none !important;
   }
   #mascot {
     width: 52px;
@@ -1043,16 +1097,57 @@ body.touch .tk {
   #titleBody .mode.online {
     grid-column: auto;
   }
-  /* Side by side the cards differ in height; their text starts at the top
-     rather than floating to the middle, as a button's would. */
+  #titleBody .mode span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  /* The over card's ways on, in a row of four. */
+  #overModes {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  #overModes .mode.wide {
+    grid-column: auto;
+  }
+  #overModes .mode span {
+    display: none;
+  }
+  #course .box > p {
+    display: none;
+  }
+  .keys {
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 4px 14px;
+    margin-top: 6px;
+    font-size: 13.5px;
+  }
   .mode {
     padding: 10px 12px 8px;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
   }
   .mode span {
     font-size: 13.5px;
+  }
+  .ghost {
+    padding: 0 10px;
+  }
+  .stats {
+    margin: 2px 0;
+  }
+  .stats b {
+    font-size: 24px;
+  }
+  .box p.unlock {
+    margin: 4px 0 0;
+  }
+  /* (.box: the base rules for .board come later in the file) */
+  .box .board {
+    margin: 4px 0;
+    font-size: 15px;
+  }
+  .box .board li {
+    padding: 2px 8px;
   }
   .foot,
   #titleBody .foot {
@@ -1070,6 +1165,9 @@ body.touch .tk {
   .code,
   #onCode {
     margin: 8px 0 2px;
+  }
+  .code {
+    font-size: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1380,4 +1478,75 @@ body:has(#title.hidden) #upd.ready {
 #aboutClose {
   margin-top: 12px;
   min-width: 120px;
+}
+
+/* A landscape phone in a team game: the teams leave the card for a strip of
+   chips along the top (free in Free flight), so the card no longer grows
+   with the team count into the stick; and the About card fits. */
+@media (max-height: 520px) {
+  /* between the card (left) and the pause/CAM buttons and radar (right),
+     two columns of three-letter names (hud.js teamPanel): nine teams at
+     most, so five lines at most, above the warning line */
+  body.touch #hTeams {
+    position: fixed;
+    top: calc(8px + var(--st));
+    left: calc(220px + var(--sl));
+    right: calc(276px + var(--sr));
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    justify-content: center;
+    gap: 1px 6px;
+    padding: 3px 6px;
+    border-radius: 10px;
+    background: var(--glass);
+    font-size: 10px;
+  }
+  body.touch #hTeams .row {
+    margin: 0;
+    gap: 3px;
+    padding: 0 2px;
+  }
+  body.touch #hTeams .row span:first-child {
+    min-width: 0;
+  }
+  .aboutLogo {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 2px;
+  }
+  /* the warning line below the team strip */
+  body.touch #warn {
+    top: calc(96px + var(--st));
+  }
+  /* the banner clear of the card at the left (and so of the right-hand
+     column too) */
+  body.touch #msg {
+    max-width: min(
+      560px,
+      calc(100vw - 2 * (236px + max(var(--sl), var(--sr))))
+    );
+  }
+  /* The plane tag, one line, just above the picker it describes: at the
+     right it sat under BOMB and the throttle. */
+  body.touch[data-mode="free"] #planeTag {
+    top: auto;
+    bottom: calc(168px + var(--sb));
+    left: 0;
+    right: 0;
+    width: fit-content;
+    margin: 0 auto;
+    padding: 4px 12px;
+    white-space: nowrap;
+  }
+  body.touch #planeTag b,
+  body.touch #planeTag span {
+    display: inline;
+    font-size: 14px;
+  }
+  body.touch #planeTag span {
+    margin-left: 8px;
+  }
+  body.touch #planeTag small {
+    display: none;
+  }
 }

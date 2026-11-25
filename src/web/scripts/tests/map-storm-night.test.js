@@ -31,8 +31,10 @@ const P = duel.P;
 const $ = (id) => w.document.getElementById(id);
 duel.S.best = 1e6;
 (await import("../game.js")).showMaps();
-const { land } = await import("../world.js");
-const { mapNow } = await import("../maps.js");
+const { land, targets, fields, buildFields, clearFields, hurtTarget } =
+  await import("../world.js");
+const { mapNow, useMap, flakAt } = await import("../maps.js");
+const { TEAM } = await import("../net/teams.js");
 const { bullets } = await import("../weapons.js");
 const pick = (id) => w.document.querySelector(`[data-map="${id}"]`).click();
 
@@ -106,6 +108,65 @@ test("the Night raid: caught in a searchlight, the flak follows", () => {
     bullets.some((b) => b.on && b.own === "e"),
     "and the flak opened up",
   );
+});
+
+// A town's lit windows: a building's own, and whether they glow.
+const windows = (t) => t.g.userData.lit ?? [];
+const glows = (m) => m.material.emissive.getHex() !== 0;
+
+test("the Night raid on the title: the town's windows lit at once", () => {
+  useMap("storm");
+  useMap("night"); // as the title shows it, no game begun
+  const town = targets.filter((t) => t.kind !== "flag");
+  assert.ok(town.length > 0);
+  for (const t of town) {
+    assert.equal(windows(t).length, 6, t.name);
+    assert.ok(windows(t).every(glows));
+  }
+});
+
+test("the Night raid: a wreck goes dark, and only its own windows", () => {
+  game.start("free");
+  const [a, ...rest] = targets;
+  const lamp = windows(rest[0])[0].material,
+    colour = lamp.color.getHex();
+  hurtTarget(a, 1000, a.g.position.clone());
+  assert.equal(a.alive, false);
+  game.run(100);
+  assert.equal(windows(a).length, 0, "its windows gone");
+  for (const t of rest) assert.ok(windows(t).length && windows(t).every(glows));
+  assert.equal(lamp.color.getHex(), colour, "the others' lamp as it was");
+});
+
+test("the Night raid: every team's runway lights glow, in its own colour", () => {
+  buildFields(5);
+  game.start("free");
+  game.run(100);
+  for (const f of fields) {
+    const edge = TEAM[f.team % TEAM.length].plane[2],
+      lights = [];
+    f.g.traverse((o) => {
+      if (o.isMesh && o.material.color.getHex() === edge) lights.push(o);
+    });
+    assert.ok(lights.length > 10, `team ${f.team}: ${lights.length} lights`);
+    for (const o of lights)
+      assert.equal(o.material.emissive.getHex(), edge, `team ${f.team}`);
+  }
+  clearFields();
+});
+
+test("flak fires only at a plane its rounds can reach", () => {
+  game.start("free");
+  // A round flies 1.4 s at 480 m/s (weapons.js): 672 m.
+  const from = P.pos.clone().set(1400, 4, 0);
+  cruise(1400, 4 + 700, 0);
+  assert.equal(flakAt(from, 1100), false, "700 m up: out of reach");
+  cruise(1400, 4 + 600, 0);
+  game.poke((P) => P.vel.set(60, 0, 0));
+  assert.equal(flakAt(from, 1100), true, "600 m up: in reach");
+  // Climbing away, it will be past reach where the round must meet it.
+  game.poke((P) => P.vel.set(0, 60, 0));
+  assert.equal(flakAt(from, 1100), false, "600 m up, climbing away");
 });
 
 test("back to the Countryside: its own sky and light", () => {

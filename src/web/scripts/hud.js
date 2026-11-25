@@ -130,13 +130,14 @@ export function hud(dt) {
   $("hPlane").textContent = P.pt.name;
   $("hMslRow").classList.toggle("hidden", !P.pt.missiles);
   $("hMsl").textContent = P.msl;
-  // The obstacle course: the ring to fly next, and the clock.
+  // The obstacle course: the ring to fly next, and the time left (the
+  // clock and the limit side by side would not fit the card).
   $("hCourseRow").classList.toggle("hidden", !run.on);
   if (run.on) {
     const RINGS = COURSES[run.level];
     $("hRing").textContent =
       `${Math.min(run.next + 1, RINGS.length)}/${RINGS.length}`;
-    $("hTime").textContent = `${clock(run.t)} / ${clock(LIMITS[run.level])}`;
+    $("hTime").textContent = clock(LIMITS[run.level] - run.t);
   }
   $("bMsl").classList.toggle("on", locked());
   $("planes").classList.toggle("hidden", !idleAtHome());
@@ -309,8 +310,13 @@ function teamPanel() {
     rows.push([t, scores[t], state]);
   }
   const box = $("hTeams");
+  // A landscape phone shows the teams as a strip of chips along the top
+  // (style.css): three-letter names keep it to two columns.
+  const compact =
+    document.body.classList.contains("touch") &&
+    !!window.matchMedia?.("(max-height: 520px)")?.matches;
   // Rebuilt only when it changes: it is read ten times a second.
-  const key = JSON.stringify(rows);
+  const key = JSON.stringify([compact, rows]);
   if (box.dataset.key === key) return;
   box.dataset.key = key;
   box.replaceChildren(
@@ -318,7 +324,9 @@ function teamPanel() {
       const row = document.createElement("div");
       row.className = "row" + (t === myTeam() ? " mine" : "");
       const name = document.createElement("span");
-      name.textContent = TEAM[t % TEAM.length].name.toUpperCase();
+      const full = TEAM[t % TEAM.length].name.toUpperCase();
+      name.textContent = compact ? full.slice(0, 3) : full;
+      name.title = full;
       name.style.color = TEAM[t % TEAM.length].css;
       const score = document.createElement("b");
       score.textContent = sc;

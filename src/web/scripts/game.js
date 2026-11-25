@@ -80,7 +80,7 @@ import { net, myTeam, isMode } from "./net/bus.js";
 import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
 import { TEAM, MODES } from "./net/teams.js";
 import { PLANES } from "./constants.js";
-import { useMap } from "./maps.js";
+import { useMap, startMap } from "./maps.js";
 import {
   run,
   startCourse,
@@ -93,7 +93,13 @@ import {
   clock,
 } from "./course.js";
 import { player } from "./scores.js";
-import { initLobby, matchEnded, rematch, leave } from "./net/lobby.js";
+import {
+  initLobby,
+  matchEnded,
+  amOrganiser,
+  rematch,
+  leave,
+} from "./net/lobby.js";
 import { initScoreboard, soloOver, renderGroup } from "./scoreboard.js";
 import { bindAbout } from "./about.js";
 
@@ -146,7 +152,7 @@ function update(dt) {
   // The obstacle course: the clock, and the rings flown.
   if (run.on) {
     const end = updCourse(dt);
-    if (end) courseOver(end === "done");
+    if (end) courseOver(end);
   }
 }
 
@@ -163,7 +169,12 @@ function stepPlane(d, quiet = false) {
   choosePlane((P.kind + d + PLANES.length) % PLANES.length);
 }
 
+// The last one-player start, as given ("course" for the obstacle course):
+// what Enter starts again.
+let lastStart = "classic";
+
 export function startGame(m) {
+  if (!net.on) lastStart = m;
   // The obstacle course is Free flight over the Countryside, with rings.
   const course = m === "course";
   if (course) m = "free";
@@ -215,10 +226,16 @@ export function startGame(m) {
           : [],
   );
   resetPlayer();
+  // The map's own per-game reset (its convoy, weather, wind); the
+  // Countryside has none.
+  startMap();
   if (course) startCourse(courseSize);
   else endCourse();
   game.camZoom = 0;
-  camera.position.set(P.pos.x, 20, 90);
+  // Level with the runway: on a raised one (Sky islands, Zeppelins) a camera
+  // starting at 20 m would sweep up through the rock or the hull. On the
+  // Countryside, the prototype's 20 m.
+  camera.position.set(P.pos.x, land.height ? P.pos.y + 18 : 20, P.pos.z + 90);
   game.state = "play";
   setPause(false);
   for (const id of ["title", "over", "controls", "course"])
@@ -235,11 +252,28 @@ export function startGame(m) {
           : "W to throttle up, then Down arrow to lift off",
     4.5,
   );
+  focusView();
+}
+
+// The keyboard's focus back on the scene, off whatever button started or
+// resumed the game, so Space and the arrows fly rather than press it.
+function focusView() {
   if (renderer) renderer.domElement.focus();
 }
 
+// Enter, off the play screen: fly again, from the title or the game-over
+// card only, and never in a match (whose over card may still be settling
+// the result, and whose next start is the organiser's).
+function enterKey() {
+  if (net.on) return;
+  const shown = (id) => !$(id).classList.contains("hidden");
+  if (!shown("title") && !shown("over")) return;
+  if (["course", "controls", "scores", "online", "pause"].some(shown)) return;
+  startGame(lastStart);
+}
+
 function gameOver() {
-  if (run.on) return courseOver(false);
+  if (run.on) return courseOver("dead");
   overScreen(false);
   game.state = "over";
   P.obj.visible = false;
@@ -255,7 +289,7 @@ let courseSize = 0;
 
 // The course's screen, from the title: the levels (each opens when the one
 // before is finished), the course's own table, and Fly.
-function openCourse() {
+function openCourse(focus = -1) {
   if (!levelOpen(courseSize)) courseSize = 0;
   $("cSizes").replaceChildren(
     ...COURSE.levels.map((z, i) => {
@@ -270,13 +304,16 @@ function openCourse() {
       b.disabled = !levelOpen(i);
       b.classList.toggle("locked", !levelOpen(i));
       b.classList.toggle("on", i === courseSize);
+      b.setAttribute("aria-pressed", String(i === courseSize));
+      // Rebuilt on a pick: the focus goes back to the level picked.
       b.addEventListener("click", () => {
         courseSize = i;
-        openCourse();
+        openCourse(i);
       });
       return b;
     }),
   );
+  if (focus >= 0) $("cSizes").children[focus].focus();
   courseTable($("cBoard"), -1);
   $("title").classList.add("hidden");
   $("course").classList.remove("hidden");
@@ -318,18 +355,22 @@ function courseTable(list, mine) {
   );
 }
 
-// The course is over: finished (`done`) or out of planes. Its own score
-// sheet, table and any level it opened; nothing goes to the best score.
-function courseOver(done) {
+// The course is over, `how`: "done" (the last ring flown), "out" (of time),
+// "dead" (out of planes) or "quit". Its own score sheet, table and any level
+// it opened; nothing goes to the best score.
+const COURSE_END = {
+  done: "Course complete!",
+  out: "Out of time",
+  dead: "Out of planes",
+  quit: "Course abandoned",
+};
+function courseOver(how) {
+  const done = how === "done";
   game.state = "over";
   P.obj.visible = false;
   const { rank, opened } = recordCourse(player().n);
   overScreen(false);
-  $("oTitle").textContent = done
-    ? "Course complete!"
-    : run.out
-      ? "Out of time"
-      : "Out of planes";
+  $("oTitle").textContent = COURSE_END[how];
   $("oScore").textContent = run.score.toLocaleString("en");
   $("oSecond").textContent = "Rings";
   $("oKills").textContent = `${run.next}/${COURSE.rings}`;
@@ -347,6 +388,10 @@ function courseOver(done) {
   $("oSolo").classList.add("hidden");
   endCourse();
   $("over").classList.remove("hidden");
+  // A short screen scrolls the table: bring this flight's row into view,
+  // now that the card is shown (a hidden one can't scroll).
+  $("oCourse").scrollTop = 0; // not the last flight's place
+  $("oCourse").querySelector(".mine")?.scrollIntoView?.({ block: "nearest" });
   $("hud").classList.add("off");
   $("touchui").classList.add("hidden");
 }
@@ -383,12 +428,16 @@ function planeOfGame() {
 }
 
 // Main menu, from the pause menu or the game-over screen. A flight left from
-// the pause menu still counts, as Quit's does; a match is left as Quit
+// the pause menu still counts, as Quit's does: a game's score, or a course
+// run that reached its first ring (recordCourse). A match is left as Quit
 // leaves it.
 function toMenu() {
   if (net.on) return leave();
   setPause(false);
-  if (game.state === "play" && !run.on) recordScore();
+  if (game.state === "play") {
+    if (run.on) recordCourse(player().n);
+    else recordScore();
+  }
   toTitle();
 }
 
@@ -399,14 +448,25 @@ export function setPause(v) {
   if (net.on) {
     $("pTitle").textContent = "Match menu";
     $("pauseFoot").classList.add("hidden");
-    $("pause").classList.toggle("hidden", !v);
-    return;
+  } else {
+    $("pTitle").textContent = "Paused";
+    $("pauseFoot").classList.remove("hidden");
+    game.paused = v;
   }
-  $("pTitle").textContent = "Paused";
-  $("pauseFoot").classList.remove("hidden");
-  game.paused = v;
   $("pause").classList.toggle("hidden", !v);
-  if (v) releaseKeys();
+  if (v) {
+    if (!net.on) releaseKeys();
+  } else if (game.state === "play") {
+    // Coming back from another app (iOS leaves the sound "interrupted").
+    sfx.resume();
+    focusView();
+  }
+}
+
+// P, Esc and the touch pause button: open or close the menu. Read from the
+// menu itself, since in a match nothing pauses.
+function togglePause() {
+  setPause($("pause").classList.contains("hidden"));
 }
 
 // ── Team games ──────────────────────────────────────────────────────────────
@@ -427,6 +487,10 @@ function startMatch({ speed }) {
   if (ownSpeed === null) ownSpeed = opt.speed;
   setSpeed(speed, false);
   clearRemotes();
+  matchResult = false;
+  // The last match's airfields go with the map they were laid on, before
+  // the new map is in (buildFields clears with the map in use).
+  clearFields();
   useMap(net.map);
   buildFields(net.teams);
   P.ghost = false;
@@ -436,13 +500,19 @@ function startMatch({ speed }) {
   $("hTeams").classList.remove("hidden");
 }
 
+// Whether the over card shows a match's result (not "Settling the
+// result…"): only then does it offer Play again.
+let matchResult = false;
+
 function matchOver({ result, winner, team }) {
   game.state = "over";
   P.obj.visible = false;
   overScreen(true);
-  // Endless enemies counts everyone's final score before naming a winner.
+  matchResult = result !== "counting";
+  // Every mode settles the result from everyone's final report first.
+  setPause(false);
   if (result === "counting") {
-    $("oTitle").textContent = "Counting the scores…";
+    $("oTitle").textContent = "Settling the result…";
     $("oScore").textContent = S.score;
     $("oKills").textContent = S.kills;
     $("oThird").textContent = "Team";
@@ -469,15 +539,26 @@ function matchOver({ result, winner, team }) {
   $("oKills").textContent = S.kills;
   $("oThird").textContent = "Team";
   $("oBest").textContent = team ?? teamScores()[myTeam()] ?? S.score;
-  const again = matchEnded();
-  $("oAgain").classList.toggle("hidden", !again);
-  $("oNote").textContent = again
-    ? MODES[net.mode]
-    : "The organiser can start another.";
+  playAgain(matchEnded());
   $("over").classList.remove("hidden");
   $("hud").classList.add("off");
   $("touchui").classList.add("hidden");
-  setPause(false);
+}
+
+// The over card's Play again: the organiser's, while the room can still make
+// a match of more than one team (`again`, from the lobby). Anyone leaving,
+// or the organiser changing, after the card is up refreshes it
+// (rosterChanged).
+function playAgain(again) {
+  $("oAgain").classList.toggle("hidden", !again);
+  $("oNote").textContent = again
+    ? MODES[net.mode]
+    : amOrganiser()
+      ? "Waiting for the room before another match."
+      : "The organiser can start another.";
+}
+function rosterChanged() {
+  if (net.on && game.state === "over" && matchResult) playAgain(matchEnded());
 }
 
 // The group's board, once this match is on it (net/match.js).
@@ -506,6 +587,7 @@ function overScreen(match) {
 // Leaving a match, by choice or because it ended: back to a one-player title.
 function toTitle() {
   net.on = false;
+  matchResult = false;
   net.mode = null;
   net.map = "field";
   net.seat = null;
@@ -536,6 +618,9 @@ function toTitle() {
     if (b.snd) b.snd.stop();
   }
   buildTargets();
+  // The title's backdrop: the map's town and weather fresh, as at a start
+  // (on the same map useMap does nothing, and no map hook would run).
+  startMap();
   P.obj.visible = false;
   P.alive = false;
   P.shadow.visible = false;
@@ -568,8 +653,9 @@ function setMap(id, persist = true) {
 // The title's map buttons: the one picked, and those still to earn, with
 // the score that opens them.
 export function showMaps() {
-  for (const b of document.querySelectorAll("[data-map]"))
+  for (const b of document.querySelectorAll("[data-map]")) {
     mapButton(b, b.dataset.map, opt.map);
+  }
 }
 
 // ── Game speed ──────────────────────────────────────────────────────────────
@@ -645,29 +731,36 @@ function toggleFull() {
   }
 }
 
+// A start from a button: on a touch screen the game goes full screen too
+// (a click is the gesture the Fullscreen API needs).
+function startFromClick(m) {
+  if (isTouch && !document.fullscreenElement) toggleFull();
+  startGame(m);
+}
+
 function initUI() {
-  document.querySelectorAll("[data-start]").forEach((b) =>
-    b.addEventListener("click", () => {
-      if (isTouch && !document.fullscreenElement) toggleFull();
-      startGame(b.dataset.start);
-    }),
-  );
+  document
+    .querySelectorAll("[data-start]")
+    .forEach((b) =>
+      b.addEventListener("click", () => startFromClick(b.dataset.start)),
+    );
   $("resume").addEventListener("click", () => setPause(false));
   $("quit").addEventListener("click", () => {
     setPause(false);
     if (net.on) return leave();
+    if (run.on) return courseOver("quit");
     S.lives = 0;
     gameOver();
   });
   for (const id of ["menu", "oMenu"]) $(id).addEventListener("click", toMenu);
   // The obstacle course: its screen, and Fly.
-  $("bCourse").addEventListener("click", openCourse);
+  $("bCourse").addEventListener("click", () => openCourse());
   $("cBack").addEventListener("click", () => {
     $("course").classList.add("hidden");
     $("title").classList.remove("hidden");
   });
   for (const id of ["cFly", "oCourseAgain"])
-    $(id).addEventListener("click", () => startGame("course"));
+    $(id).addEventListener("click", () => startFromClick("course"));
   // The controls: a screen of their own, off the title.
   $("bControls").addEventListener("click", () => {
     $("title").classList.add("hidden");
@@ -684,22 +777,35 @@ function initUI() {
       if (game.state === "play") setPause(true);
     },
   });
-  $("oAgain").addEventListener("click", rematch);
-  // The runway's plane picker: ‹ and › step through the types.
-  $("pPrev").addEventListener("click", () => stepPlane(-1));
-  $("pNext").addEventListener("click", () => stepPlane(1));
+  $("oAgain").addEventListener("click", () => {
+    if (!$("oAgain").classList.contains("hidden")) rematch();
+  });
+  // The runway's plane picker: ‹ and › step through the types, and give the
+  // keyboard back to the scene.
+  $("pPrev").addEventListener("click", () => {
+    stepPlane(-1);
+    focusView();
+  });
+  $("pNext").addEventListener("click", () => {
+    stepPlane(1);
+    focusView();
+  });
   $("oLeave").addEventListener("click", leave);
   initLobby({
     startMatch,
     toTitle,
+    rosterChanged,
     speed: () => opt.speed,
     map: () => opt.map,
   });
   mapButtons($("maps"), "map");
-  if (unlockAll)
-    document
-      .querySelector("#maps + .pickNote")
-      .prepend("Testing: every map and course level is open. ");
+  // Its own line, which no short-window rule hides.
+  if (unlockAll) {
+    const note = document.createElement("p");
+    note.className = "pickNote testing";
+    note.textContent = "Testing: every map and course level is open.";
+    $("maps").after(note);
+  }
   for (const b of document.querySelectorAll("[data-map]"))
     b.addEventListener("click", () => setMap(b.dataset.map));
   setMap(opt.map, false);
@@ -733,6 +839,9 @@ function initUI() {
         autoPausedAt = now;
       }
     } else {
+      // Back on the page: wake the sound, which iOS may have interrupted
+      // (in a match nothing pauses, so nothing else would).
+      sfx.resume();
       if (
         autoPausedAt >= 0 &&
         now - autoPausedAt < FULLSCREEN_BLINK_MS &&
@@ -767,8 +876,8 @@ export function boot({ createRenderer }) {
   });
 
   bindInput({
-    startGame,
-    setPause,
+    enter: enterKey,
+    togglePause,
     toggleFull,
     dropBomb,
     flip,

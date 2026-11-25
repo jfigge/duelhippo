@@ -60,26 +60,25 @@ export default function build(kit) {
   const UP = new THREE.Vector3(0, 1, 0),
     slant = new THREE.Vector3();
   // The rain blows with the wind: a steady breeze, and the gust on top.
+  // Every drop, every frame: plain loops, nothing allocated.
+  const wrap = (v, h) => (v > h ? v - 2 * h : v < -h ? v + 2 * h : v);
   function fall(dt) {
     const wx = 18 + wind.dir.x * wind.now * 2.5,
       wz = wind.dir.z * wind.now * 2.5;
     tilt.setFromUnitVectors(UP, slant.set(-wx, 70, -wz).normalize());
-    drops.forEach((d, i) => {
+    for (let i = 0; i < RAIN; i++) {
+      const d = drops[i];
       d[1] -= 70 * dt;
-      d[0] += wx * dt;
-      d[2] += wz * dt;
+      d[0] = wrap(d[0] + wx * dt, 80);
+      d[2] = wrap(d[2] + wz * dt, 80);
       if (d[1] < 0) d[1] += 120;
-      for (const k of [0, 2]) {
-        if (d[k] > 80) d[k] -= 160;
-        if (d[k] < -80) d[k] += 160;
-      }
       at.set(
         camera.position.x + d[0],
         camera.position.y - 60 + d[1],
         camera.position.z + d[2],
       );
       rain.setMatrixAt(i, mx.compose(at, tilt, one));
-    });
+    }
     rain.instanceMatrix.needsUpdate = true;
   }
 
@@ -178,20 +177,17 @@ export default function build(kit) {
     along.setFromUnitVectors(X, wind.dir);
     stretch.set(0.5 + k, 1, 1);
     const v = 40 + wind.now * 5;
-    spray.forEach((d, i) => {
-      d[0] += wind.dir.x * v * dt;
-      d[2] += wind.dir.z * v * dt;
-      for (const j of [0, 2]) {
-        if (d[j] > 70) d[j] -= 140;
-        if (d[j] < -70) d[j] += 140;
-      }
+    for (let i = 0; i < STREAKS; i++) {
+      const d = spray[i];
+      d[0] = wrap(d[0] + wind.dir.x * v * dt, 70);
+      d[2] = wrap(d[2] + wind.dir.z * v * dt, 70);
       at.set(
         camera.position.x + d[0],
         camera.position.y + d[1],
         camera.position.z + d[2],
       );
       streaks.setMatrixAt(i, mx.compose(at, along, stretch));
-    });
+    }
     streaks.instanceMatrix.needsUpdate = true;
   }
 
@@ -223,6 +219,18 @@ export default function build(kit) {
   let nextBolt = 8,
     thunderIn = -1;
   const flash = () => document.getElementById("flash");
+
+  function calm() {
+    wind.last = wind.now = wind.t = 0;
+    wind.next = 4;
+    wind.warned = false;
+    gust.fill(0);
+    nextBolt = 8;
+    thunderIn = -1;
+    flash()?.classList.remove("on");
+    fall(0);
+    race(0);
+  }
   function lightning(dt) {
     if ((nextBolt -= dt) <= 0) {
       nextBolt = 6 + Math.random() * 8;
@@ -252,12 +260,11 @@ export default function build(kit) {
     light: [0.55, 0.35],
     enter() {
       scene.add(rain, streaks);
-      wind.last = wind.now = 0;
-      wind.next = 4;
-      wind.warned = false;
-      fall(0);
-      race(0);
+      calm();
     },
+    // A new game: no gust blowing or on its way, the buffeting settled, the
+    // first bolt a while off.
+    start: calm,
     leave() {
       rain.removeFromParent();
       streaks.removeFromParent();

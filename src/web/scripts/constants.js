@@ -117,7 +117,9 @@ export const COURSE = {
   slack: 2,
   bonus: 10,
 };
-export const COURSE_KEY = "duelhippo.course";
+// v2: the levels' layouts changed, so scores flown on the old rings are
+// dropped rather than ranked against the new ones.
+export const COURSE_KEY = "duelhippo.course.v2";
 
 // The City: a grid of blocks `pitch` m apart, each `block` m square (so the
 // streets are 90 m wide), its towers up to 460 m tall under a solid cloud

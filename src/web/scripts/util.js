@@ -126,6 +126,7 @@ export function mapButton(b, id, picked) {
     b.replaceChildren(name, need);
   }
   b.classList.toggle("on", id === picked);
+  b.setAttribute("aria-pressed", String(id === picked));
   b.classList.toggle("locked", !open);
   b.disabled = !open;
 }

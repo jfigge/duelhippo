@@ -59,6 +59,7 @@ test("the organiser's setup is ours; anyone else's is not", () => {
     v: PROTO,
     layout: "3x1",
     mode: "endless",
+    map: "field",
     ff: false,
     speed: 1,
     roster: [
@@ -127,6 +128,18 @@ test("a kill credited to our seat scores here; a false claim does nothing", () =
   assert.ok(!duel.enemies[0].alive);
 });
 
+test("an update sent before a flyer fell does not bring it back", () => {
+  const e = [500, 200, 500, 0, 0, 0, 1];
+  net.from(0, state([500, 200, 500], { e }), 60);
+  assert.ok(duel.enemies[0].alive);
+  net.from(0, { t: "ek", i: 0, by: 1 }, 62);
+  net.from(0, state([500, 200, 500], { e }), 61);
+  assert.ok(!duel.enemies[0].alive, "older than the kill");
+  net.from(0, state([500, 200, 500], { e }), 63);
+  assert.ok(duel.enemies[0].alive, "a new one, after it");
+  net.from(0, { t: "ek", i: 0, by: 1 }, 64);
+});
+
 test("our flyer, hit by others: we decide, and say who got it", () => {
   net.clear();
   for (let i = 0; i < 3; i++) net.from(1, { t: "eh", i: 2 });
@@ -180,11 +193,13 @@ test("everyone out: the scores are counted, and the most points wins", () => {
   net.from(1, { t: "out" });
   assert.equal(duel.state, "over");
   assert.equal(net.sent("fin")[0].sc, S.score);
-  assert.equal($("oTitle").textContent, "Counting the scores…");
+  assert.equal($("oTitle").textContent, "Settling the result…");
   // Ace's last update was a kill behind: the final score decides.
-  net.from(0, { t: "fin", sc: S.score + 50 });
-  assert.equal($("oTitle").textContent, "Counting the scores…", "Bo's is due");
-  net.from(1, { t: "fin", sc: 0 });
+  const id = "0123456789abcdef";
+  net.from(0, { t: "fin", id: "fedcba9876543210", sc: 99999 });
+  net.from(0, { t: "fin", id, sc: S.score + 50 });
+  assert.equal($("oTitle").textContent, "Settling the result…", "Bo's is due");
+  net.from(1, { t: "fin", id, sc: 0 });
   assert.equal($("oTitle").textContent, "Cyan wins");
   assert.ok($("oAgain").classList.contains("hidden"), "the organiser restarts");
 });

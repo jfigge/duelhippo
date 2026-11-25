@@ -22,7 +22,8 @@
 // Installs a stand-in WebSocket on the game's window. jsdom has no WebRTC,
 // so every pair settles on the server relay, and every message to the other
 // players arrives here as {t:"g", m, to?}. The test answers as the server
-// (`server()`) or as the player in a seat (`from()`).
+// (`server()`) or as the player in a seat (`from()`, with the link's running
+// number `n` if it matters), or cuts the connection (`drop()`).
 
 export function fakeServer(w, { seat = 0, peers = [], code = "ABCD" } = {}) {
   const self = { ws: null, opened: [] };
@@ -49,13 +50,20 @@ export function fakeServer(w, { seat = 0, peers = [], code = "ABCD" } = {}) {
   w.WebSocket = FakeWS;
   delete w.RTCPeerConnection;
   self.server = (m) => self.ws.recv(m);
-  self.from = (s, m) => self.ws.recv({ t: "g", m, from: s });
-  // What the game has sent the other players, oldest first: the messages,
-  // or (`withTo`) {m, to} with `to` the seats named (undefined: everyone).
+  self.from = (s, m, n = undefined) =>
+    self.ws.recv({ t: "g", m: n === undefined ? m : { ...m, sq: n }, from: s });
+  self.drop = (code = 1006) => {
+    self.ws.readyState = 3;
+    self.ws.onclose?.({ code });
+  };
+  // What the game has sent the other players, oldest first: the messages
+  // (without the link's running numbers), or (`withTo`) {m, to} with `to`
+  // the seats named (undefined: everyone).
+  const bare = ({ sq, fq, ...m }) => m;
   self.sent = (t, withTo = false) =>
     self.ws.sent
       .filter((x) => x.t === "g" && (!t || x.m.t === t))
-      .map((x) => (withTo ? { m: x.m, to: x.to } : x.m));
+      .map((x) => (withTo ? { m: bare(x.m), to: x.to } : bare(x.m)));
   self.clear = () => (self.ws.sent.length = 0);
   return self;
 }
