@@ -47,6 +47,7 @@ import { fire, showBomb } from "../weapons.js";
 import { R, pushState, updRemote } from "../remote.js";
 import { net, send, isHost, isGuest, isDuel, isCoop } from "./bus.js";
 import { packState, unpackState } from "./protocol.js";
+import { recordMatch, MAX_SCORE } from "../scores.js";
 
 const SEND_EVERY_MS = 50;
 const COLLIDE = 6.5; // the prototype's mid-air distance
@@ -58,13 +59,41 @@ let out = false; // this machine has no planes left
 let ended = false;
 let onEnd = () => {};
 
-// `finish(result)` is game.js's end-of-match screen.
-export function beginMatch(finish) {
+// The group scoreboard. When a match ends each machine says its final score
+// ("fin"), and files the match once it has both: the other's last state
+// update can be a kill behind. If theirs never comes, the last one heard
+// stands in after FIN_WAIT_MS.
+const FIN_WAIT_MS = 3000;
+let rec = null; // this match's filing: who, what, and how it ended
+let onRecord = () => {};
+
+// `finish(result)` is game.js's end-of-match screen; `recorded(board, id)`
+// shows the group's board with this match on it.
+export function beginMatch(finish, recorded = () => {}) {
   lastSent = 0;
   out = ended = false;
   R.out = false;
   onEnd = finish;
+  onRecord = recorded;
   S.rebuild.host = S.rebuild.guest = 0;
+  if (rec) window.clearTimeout(rec.timer);
+  // Taken now: leaving the lobby clears `net` before a late "fin" can land.
+  rec =
+    net.group && net.match && net.me && net.peer
+      ? {
+          group: net.group,
+          id: net.match,
+          kind: net.kind,
+          mode: game.mode,
+          me: net.me,
+          peer: net.peer,
+          result: null,
+          mine: null,
+          theirs: null,
+          done: false,
+          timer: 0,
+        }
+      : null;
 }
 
 // ── Every frame ─────────────────────────────────────────────────────────────
@@ -108,7 +137,47 @@ export function outOfPlanes() {
 function end(result) {
   if (ended) return;
   ended = true;
+  send({ t: "fin", sc: S.score });
   onEnd(result);
+  if (!rec || result === "left") return;
+  rec.result = result;
+  rec.mine = S.score;
+  if (rec.theirs !== null) file();
+  else rec.timer = window.setTimeout(() => file(true), FIN_WAIT_MS);
+}
+
+function gotFin(m) {
+  if (!rec || !Number.isInteger(m.sc) || m.sc < 0 || m.sc > MAX_SCORE) return;
+  rec.theirs = m.sc;
+  if (rec.mine !== null) file();
+}
+
+function file(late = false) {
+  if (!rec || rec.done || rec.mine === null) return;
+  if (rec.theirs === null && !late) return;
+  rec.done = true;
+  window.clearTimeout(rec.timer);
+  const { me, peer, result } = rec;
+  const winner =
+    rec.kind === "duel"
+      ? result === "won"
+        ? me.h
+        : result === "lost"
+          ? peer.h
+          : null
+      : null;
+  const entry = {
+    id: rec.id,
+    at: Date.now(),
+    m: rec.mode,
+    p: [
+      [me.h, me.n, rec.mine],
+      [peer.h, peer.n, rec.theirs ?? R.score],
+    ],
+    w: winner,
+  };
+  const board = recordMatch(rec.group, [me.h, peer.h], rec.kind, entry);
+  onRecord(board, entry.id);
 }
 
 // The other player went: the match cannot go on.
@@ -118,6 +187,8 @@ export function peerGone() {
 
 // ── What the other machine says ─────────────────────────────────────────────
 export function matchMessage(m) {
+  // Their final score comes after the match, on either side of our own end.
+  if (m.t === "fin") return gotFin(m);
   if (game.state !== "play") return;
   switch (m.t) {
     case "s": {

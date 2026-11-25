@@ -52,6 +52,7 @@ import { R, resetRemote, hideRemote } from "./remote.js";
 import { net, isHost, isCoop, isDuel } from "./net/bus.js";
 import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
 import { initLobby, matchEnded, rematch, leave } from "./net/lobby.js";
+import { initScoreboard, soloOver, renderGroup } from "./scoreboard.js";
 
 let renderer = null;
 
@@ -163,6 +164,7 @@ function gameOver() {
   $("oScore").textContent = S.score;
   $("oKills").textContent = S.kills;
   $("best").textContent = $("oBest").textContent = S.best;
+  soloOver(S.score, game.mode);
   $("over").classList.remove("hidden");
   $("hud").classList.add("off");
   $("touchui").classList.add("hidden");
@@ -197,7 +199,7 @@ function startMatch({ kind, mode, speed }) {
   setSpeed(speed, false);
   resetRemote(kind);
   startGame(mode);
-  beginMatch(matchOver);
+  beginMatch(matchOver, showGroup);
   $("hRivalLabel").textContent = kind === "duel" ? "RIVAL" : "WINGMAN";
   $("hRivalRow").classList.remove("hidden");
 }
@@ -228,10 +230,19 @@ function matchOver(result) {
   setPause(false);
 }
 
+// The group's board, once this match is on it (net/match.js).
+function showGroup(board, fresh) {
+  if (game.state !== "over") return;
+  renderGroup($("oGroup"), board, net.kind, net.me?.h, fresh);
+  $("oGroup").classList.remove("hidden");
+}
+
 // The over card serves both: one player's best score, or a match result.
 function overScreen(match) {
   $("overMp").classList.toggle("hidden", !match);
   $("overModes").classList.toggle("hidden", match);
+  $("oGroup").classList.add("hidden");
+  if (match) $("oSolo").classList.add("hidden");
   if (!match) {
     $("oTitle").textContent = "Out of planes";
     $("oThird").textContent = "Best";
@@ -344,6 +355,7 @@ function initUI() {
   $("oAgain").addEventListener("click", rematch);
   $("oLeave").addEventListener("click", leave);
   initLobby({ startMatch, toTitle, speed: () => opt.speed });
+  initScoreboard();
   $("bMute").addEventListener("click", () => {
     sfx.init();
     $("bMute").textContent = sfx.toggle() ? "SOUND OFF" : "SOUND ON";

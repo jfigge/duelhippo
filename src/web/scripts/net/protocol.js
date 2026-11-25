@@ -26,9 +26,10 @@
 // for buildings, whoever dropped the bomb) and reported to the other side.
 //
 // Lobby
-//   hi     {v}                         guest → host, once connected
-//   setup  {v, kind, mode, speed}      host → guest: the match on offer
-//   go     {}                          host → guest: start (both count 3-2-1)
+//   hi     {v, h, n}                   guest → host, once connected
+//   setup  {v, kind, mode, speed, h, n} host → guest: the match on offer
+//   board  {g, duel, coop}             each side: its copy of the group board
+//   go     {id}                        host → guest: start (both count 3-2-1)
 //   bad    {text}                      the versions differ: no match
 // Play
 //   s      packed state (below)        each side, 20 a second, fast
@@ -41,9 +42,13 @@
 //   eh     {i, kill}                   (co-op guest) I hit AI flyer i / flew into it
 //   ek     {i, by}                     (co-op host) AI flyer i is down; by: "host" | "guest"
 //   town   {side}                      (host) rebuild that side's buildings
+//   fin    {sc}                        my match is over; my final score
 //   bye    {}                          leaving the match
+//
+// h is a player's hash and n their match name (scores.js); g is the group
+// board's id, a hash of both players' hashes.
 
-export const PROTO = 1;
+export const PROTO = 2;
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const r4 = (v) => Math.round(v * 10000) / 10000;

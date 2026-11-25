@@ -8,8 +8,17 @@ compatibility_date = "2026-11-01"
 name = "ROOMS"
 class_name = "Room"
 
+# The one-player scoreboard: one object, one SQLite table (board.js).
+[[durable_objects.bindings]]
+name = "BOARD"
+class_name = "Board"
+
 # SQLite-backed, the kind the Workers Free plan offers. The rooms store
 # nothing; the class only needs to exist.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Board"]

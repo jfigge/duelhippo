@@ -21,6 +21,8 @@
 //
 //   GET /host         WebSocket: make a room; the reply names its code
 //   GET /join/<code>  WebSocket: join that room
+//   GET /board/solo   the one-player scoreboard (?id= adds that player's place)
+//   POST /board/solo  a one-player score: {id, n, sc, m}; answers as GET does
 //   GET /             a line of text, to show the server is up
 //
 // Each room is a Durable Object named by its code, so both players reach the
@@ -29,6 +31,9 @@
 // which is what keeps a free game free. In a direct (WebRTC) match the room
 // carries only the handshake; in a relayed one it carries the game too.
 // room.js has the rules.
+//
+// The scoreboard is one more Durable Object, a single one named "solo", so
+// every player reads and writes the same table. board.js has its rules.
 
 import { DurableObject } from "cloudflare:workers";
 import {
@@ -40,8 +45,26 @@ import {
   underLimit,
   CLOSE,
 } from "./room.js";
+import { makeBoard, parseId, parseSubmit } from "./board.js";
 
 const TEXT = { "content-type": "text/plain; charset=utf-8" };
+
+// The game calls the scoreboard from app://, capacitor:// and web origins,
+// and sends no cookies, so any origin may read it.
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+  "access-control-max-age": "86400",
+};
+const json = (body, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, "content-type": "application/json" },
+  });
+
+// A submission is about 80 bytes of JSON.
+const MAX_BODY = 1024;
 
 export default {
   async fetch(request, env) {
@@ -74,6 +97,8 @@ export default {
       );
     }
 
+    if (url.pathname === "/board/solo") return scoreboard(request, url, env);
+
     if (url.pathname === "/")
       return new Response("Duel Hippo match server\n", { headers: TEXT });
     return new Response("Not found\n", { status: 404, headers: TEXT });
@@ -81,6 +106,45 @@ export default {
 };
 
 const room = (env, code) => env.ROOMS.get(env.ROOMS.idFromName(code));
+const board = (env) => env.BOARD.get(env.BOARD.idFromName("solo"));
+
+async function scoreboard(request, url, env) {
+  if (request.method === "OPTIONS")
+    return new Response(null, { status: 204, headers: CORS });
+  if (request.method === "GET")
+    return json(await board(env).read(parseId(url.searchParams.get("id"))));
+  if (request.method !== "POST") return json({ error: "method" }, 405);
+  const text = await request.text();
+  if (text.length > MAX_BODY) return json({ error: "too long" }, 413);
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return json({ error: "not JSON" }, 400);
+  }
+  const { entry, error } = parseSubmit(body);
+  if (error) return json({ error }, 400);
+  return json(await board(env).submit(entry));
+}
+
+// The scoreboard's table, in the object's own SQLite database. Its methods
+// are called over RPC from the worker above.
+export class Board extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.board = makeBoard((sql, ...binds) =>
+      ctx.storage.sql.exec(sql, ...binds).toArray(),
+    );
+  }
+
+  read(id) {
+    return this.board.read(id);
+  }
+
+  submit(entry) {
+    return this.board.submit(entry);
+  }
+}
 
 export class Room extends DurableObject {
   // Message counters per socket; lost when the object hibernates, which is

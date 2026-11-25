@@ -95,6 +95,11 @@ Rules that follow from this:
 - `constants`
 - `util`
 - `remote`: the other player's plane, drawn from its updates
+- `scores`: the player's id, initials and match name; the one-player board's
+  client; the two-player group boards and their merge
+- `scoreboard`: the scoreboards on screen
+- `sha256`: a synchronous SHA-256 (Web Crypto's is async, and missing
+  outside secure contexts)
 - `net/`: two player — `bus` (shared state, imports nothing), `link`,
   `lobby`, `match`, `protocol`, `config`
 - `game`: flow, update and boot
@@ -144,12 +149,23 @@ passed to `bindInput()`, so it imports nothing it controls.
 `src/server/` is a Cloudflare Worker with its own `package.json`, because
 wrangler is large and the game builds don't need it.
 - `room.js` holds the rules and is tested under Node.
+- `board.js` holds the one-player scoreboard's rules and SQL. The `Board`
+  Durable Object (one, named "solo") runs it on its SQLite storage; the tests
+  run it on `node:sqlite`. It is the only thing the server stores.
+- Player ids are secrets of a sort: the server never returns them, and the
+  two-player protocol carries only their hashes.
 - `worker.js` wires those rules to a Durable Object that uses the WebSocket
   Hibernation API, which keeps it on the free plan.
 - The server never reads game messages; it forwards them.
 - Keep the protocol version (`PROTO` in `net/protocol.js`) in step. Bump it
   whenever messages change shape, so that mismatched builds refuse to play
   rather than misbehave.
+
+## Scoreboards and the one-player path
+`scores.js` must never call `Math.random`: ids and match ids come from
+`crypto`, so a one-player game's random draws stay the prototype's. The
+one-player hooks (`soloOver` on game over, a quiet `flushSolo` at boot) do
+nothing to the simulation.
 
 ## Conventions
 - **License header.** Every first-party JS, MJS and CSS file under `src/app`,

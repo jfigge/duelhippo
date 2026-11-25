@@ -24,6 +24,11 @@
 // room code; the guest types it in. Once the two are connected the guest
 // says hello with its protocol version, the host answers with the match, and
 // the host's START counts both machines down together.
+//
+// The hello and the answer also carry each player's hash and name, which
+// names the pair's group scoreboard (scores.js). Both then send their copy
+// of it, and each keeps the two merged, so a board one of them has lost
+// comes back from the other.
 
 import { $ } from "../util.js";
 import { net } from "./bus.js";
@@ -31,8 +36,22 @@ import { serverUrl, serverHint } from "./config.js";
 import { Link } from "./link.js";
 import { PROTO } from "./protocol.js";
 import { matchMessage, peerGone } from "./match.js";
+import {
+  player,
+  setName,
+  matchName,
+  cleanName,
+  playerHash,
+  groupId,
+  groupBoard,
+  mergeGroup,
+  isHash,
+  newMatchId,
+  isMatchId,
+} from "../scores.js";
+import { renderGroup } from "../scoreboard.js";
 
-const LOBBY = new Set(["hi", "setup", "go", "bad", "bye"]);
+const LOBBY = new Set(["hi", "setup", "board", "go", "bad", "bye"]);
 const COUNT_FROM = 3;
 
 let act = null; // { startMatch, toTitle }, from game.js
@@ -83,9 +102,11 @@ export function initLobby(actions) {
       .value.toUpperCase()
       .replace(/[^A-Z]/g, "");
   });
-  $("onStart").addEventListener("click", () => {
-    link.send({ t: "go" });
-    countdown();
+  $("onStart").addEventListener("click", go);
+  $("onName").value = player().name;
+  $("onName").addEventListener("input", () => setName($("onName").value));
+  $("onName").addEventListener("blur", () => {
+    $("onName").value = player().name;
   });
   $("onBack").addEventListener("click", leave);
   pick("kind", setup.kind);
@@ -106,6 +127,8 @@ export function openLobby() {
   show("onMenu");
   $("onLink").textContent = "";
   status(serverUrl() ? "" : "Two-player isn't available in this build.", true);
+  $("onBoard").classList.add("hidden");
+  forget();
   $("onHost").disabled = $("onJoin").disabled = !serverUrl();
 }
 
@@ -154,10 +177,12 @@ function connected(l) {
     );
   l.onpath = (path) => {
     $("onLink").textContent = path === "direct" ? "DIRECT LINK" : "VIA SERVER";
-    if (l.role === "guest") l.send({ t: "hi", v: PROTO });
+    if (l.role === "guest") l.send({ t: "hi", v: PROTO, ...whoAmI() });
   };
   l.onleft = () => {
     if (playing) return peerGone();
+    forget();
+    $("onBoard").classList.add("hidden");
     if (l.role === "host") {
       $("onStart").disabled = true;
       status("Your friend left. Waiting for someone else to join…");
@@ -167,6 +192,8 @@ function connected(l) {
     if (playing) return peerGone();
     status(why, true);
     show("onMenu");
+    $("onBoard").classList.add("hidden");
+    forget();
     link = net.link = null;
   };
   l.start();
@@ -181,7 +208,8 @@ function lobbyMessage(m) {
       });
       return status("Your friend has a different version of Duel Hippo.", true);
     }
-    link.send({ t: "setup", v: PROTO, ...setup });
+    link.send({ t: "setup", v: PROTO, ...setup, ...whoAmI() });
+    meet(m);
     $("onStart").disabled = false;
     status(describe(setup) + " · Press START when you're both ready.");
   } else if (m.t === "setup" && link.role === "guest") {
@@ -192,11 +220,53 @@ function lobbyMessage(m) {
       mode: m.mode === "free" ? "free" : "classic",
       speed: [0.25, 0.5, 0.75, 1].includes(m.speed) ? m.speed : 1,
     };
+    meet(m);
     status(describe(setup) + " · Waiting for the host to start…");
+  } else if (m.t === "board") {
+    if (net.group && m.g === net.group) {
+      mergeGroup(net.group, members(), m);
+      showBoard();
+    }
   } else if (m.t === "go") {
-    if (link.role === "guest") countdown();
+    if (link.role === "guest") {
+      net.match = isMatchId(m.id) ? m.id : null;
+      countdown();
+    }
   } else if (m.t === "bad") status(m.text, true);
   else if (m.t === "bye") peerGone();
+}
+
+// ── The group scoreboard ────────────────────────────────────────────────────
+const whoAmI = () => ({ h: playerHash(), n: matchName() });
+const members = () => [net.me.h, net.peer.h];
+
+// The other player has said who they are: name the group, show its board
+// and send this machine's copy. A build with no crypto has no hash, and
+// plays without a board.
+function meet(m) {
+  net.me = whoAmI();
+  net.peer = isHash(m.h) ? { h: m.h, n: cleanName(m.n) || "Pilot" } : null;
+  if (!net.me.h || !net.peer || net.peer.h === net.me.h) return forget();
+  net.group = groupId(members());
+  link.send({ t: "board", g: net.group, ...groupBoard(net.group) });
+  showBoard();
+}
+
+function forget() {
+  net.me = net.peer = net.group = net.match = null;
+}
+
+function showBoard() {
+  if (!net.group) return;
+  renderGroup($("onBoard"), groupBoard(net.group), setup.kind, net.me.h);
+  $("onBoard").classList.remove("hidden");
+}
+
+// The host starts a match (and every rematch) with a fresh id.
+function go() {
+  net.match = newMatchId();
+  link.send({ t: "go", id: net.match });
+  countdown();
 }
 
 const describe = (s) =>
@@ -241,8 +311,7 @@ export function matchEnded() {
 
 export function rematch() {
   if (!link) return;
-  link.send({ t: "go" });
-  countdown();
+  go();
 }
 
 // Back to the title screen from anywhere, closing the connection.
@@ -253,6 +322,7 @@ export function leave() {
   }
   link = net.link = null;
   playing = false;
+  forget();
   $("online").classList.add("hidden");
   act.toTitle();
 }

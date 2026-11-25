@@ -15,11 +15,13 @@
   Electron, capacitor://localhost on iOS, the page's host on the web). Inline
   styles are allowed because the HUD sets element styles from script and the
   Vite dev server injects CSS that way; ws: is the dev server's HMR socket
-  and its client starts a blob: worker.
+  and its client starts a blob: worker. The match server's address is only
+  known at build time, so ws:, wss: and its scoreboard's http:/https: are
+  open to any host.
 -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss: http: https:; worker-src 'self' blob:"
     />
   </head>
   <body data-mode="classic">
@@ -142,6 +144,7 @@
         <div class="foot">
           <span>Best score <b id="best">0</b></span>
           <span class="btns"
+            ><button id="bScores" class="ghost">SCORES</button
             ><button id="bSpeed" class="ghost">SPEED 100%</button
             ><button id="bMute" class="ghost">SOUND ON</button></span
           >
@@ -157,6 +160,24 @@
           ><span>Kills<b id="oKills">0</b></span
           ><span><i id="oThird">Best</i><b id="oBest">0</b></span>
         </div>
+        <div id="oSolo" class="hidden">
+          <div class="foot">
+            <span id="oRank"></span>
+            <button id="oScores" class="ghost">SCORES</button>
+          </div>
+          <div id="oInit" class="initials hidden">
+            <input
+              id="oInitials"
+              maxlength="3"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              placeholder="AAA"
+              aria-label="Your initials"
+            /><button id="oInitSave" class="ghost">SAVE</button>
+          </div>
+        </div>
+        <div id="oGroup" class="group hidden"></div>
         <div class="foot hidden" id="overMp">
           <span id="oNote"></span>
           <span class="btns"
@@ -171,6 +192,29 @@
           <button class="mode free" data-start="free">
             <b>Free flight</b><span>Fly again in full 3D.</span>
           </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="scores" class="ov hidden">
+      <div class="box">
+        <h2>High scores</h2>
+        <ol id="scList" class="board"></ol>
+        <p id="scMsg"></p>
+        <div class="initials">
+          <input
+            id="scInitials"
+            maxlength="3"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            placeholder="AAA"
+            aria-label="Your initials"
+          /><button id="scSave" class="ghost">SAVE INITIALS</button>
+        </div>
+        <div class="foot">
+          <span>Three letters, A to Z. One-player games.</span>
+          <button id="scBack" class="ghost">BACK</button>
         </div>
       </div>
     </section>
@@ -197,6 +241,16 @@
       <div class="box">
         <h2>Two player</h2>
         <div id="onMenu">
+          <label class="callsign"
+            ><span>Your name</span
+            ><input
+              id="onName"
+              maxlength="12"
+              autocomplete="nickname"
+              spellcheck="false"
+              placeholder="Pilot"
+              aria-label="Your name"
+          /></label>
           <div class="modes">
             <button class="mode" id="onHost">
               <b>Host a game</b><span>Get a code to give your friend.</span>
@@ -240,6 +294,7 @@
         </div>
         <div id="onRoom" class="hidden">
           <div id="onCodeShow" class="code"></div>
+          <div id="onBoard" class="group hidden"></div>
           <div class="foot">
             <span></span><button id="onStart" class="ghost">START</button>
           </div>

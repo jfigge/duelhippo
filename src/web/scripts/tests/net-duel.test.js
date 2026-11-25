@@ -32,6 +32,8 @@ const $ = (id) => w.document.getElementById(id);
 const S = duel.S,
   P = duel.P;
 const net = fakeServer(w, { role: "host" });
+const HEX64 = /^[0-9a-f]{64}$/;
+const RIVAL = "b".repeat(64); // the guest's player hash
 
 test("hosting: a code, then the guest's hello gets the match on offer", async () => {
   $("bOnline").click();
@@ -49,20 +51,36 @@ test("hosting: a code, then the guest's hello gets the match on offer", async ()
     "VIA SERVER",
     "no WebRTC here: relayed",
   );
-  net.peer({ t: "hi", v: 1 });
-  assert.deepEqual(net.toPeer("setup")[0], {
+  net.peer({ t: "hi", v: 2, h: RIVAL, n: "Red <b>Baron</b>" });
+  const { h, ...setup } = net.toPeer("setup")[0];
+  assert.deepEqual(setup, {
     t: "setup",
-    v: 1,
+    v: 2,
     kind: "duel",
     mode: "classic",
     speed: 1,
+    n: "Pilot",
   });
+  assert.match(h, HEX64, "a hash, never the id itself");
   assert.ok(!$("onStart").disabled);
+});
+
+test("then the pair's group board: named by both, sent, and shown", () => {
+  const [board] = net.toPeer("board");
+  assert.match(board.g, HEX64);
+  assert.deepEqual([board.duel, board.coop], [[], []]);
+  assert.equal(duel.net.peer.n, "Red bBaronb", "a peer's name is cleaned");
+  assert.ok(!$("onBoard").classList.contains("hidden"));
+  assert.match($("onBoard").textContent, /No games together yet/);
+  // A board for some other pair is not ours to merge.
+  net.peer({ t: "board", g: "c".repeat(64), duel: [], coop: [] });
+  assert.equal(w.localStorage.getItem("duelhippo.groups"), null);
 });
 
 test("START counts both down, then the duel begins at the home runway", async () => {
   $("onStart").click();
   assert.equal(net.toPeer("go").length, 1);
+  assert.match(net.toPeer("go")[0].id, /^[0-9a-f]{16}$/, "a match id");
   await tick(3200);
   assert.equal(duel.state, "play");
   assert.equal(duel.net.kind, "duel");
@@ -165,6 +183,33 @@ test("their last plane gone: we win, and the host may go again", () => {
   assert.equal($("oTitle").textContent, "You win!");
   assert.ok(!$("oAgain").classList.contains("hidden"));
   assert.ok($("overModes").classList.contains("hidden"));
+  assert.ok($("oSolo").classList.contains("hidden"), "no one-player board");
+});
+
+test("the match goes on the pair's board once both final scores are in", () => {
+  const [fin] = net.toPeer("fin");
+  assert.deepEqual(fin, { t: "fin", sc: S.score });
+  assert.ok($("oGroup").classList.contains("hidden"), "waiting for theirs");
+  net.peer({ t: "fin", sc: 300 });
+  assert.ok(!$("oGroup").classList.contains("hidden"));
+  assert.match($("oGroup").textContent, /Your best duels/);
+  const groups = JSON.parse(w.localStorage.getItem("duelhippo.groups"));
+  const [board] = Object.values(groups);
+  assert.equal(board.duel.length, 1);
+  const [e] = board.duel;
+  assert.equal(e.id, duel.net.match, "filed under the host's id");
+  assert.equal(e.w, duel.net.me.h, "we won");
+  const score = (h) => e.p.find((p) => p[0] === h)[2];
+  assert.equal(score(duel.net.me.h), S.score);
+  assert.equal(score(RIVAL), 300);
+  // The same match again (their copy, say) is still one match.
+  net.peer({ t: "fin", sc: 300 });
+  assert.equal(
+    JSON.parse(w.localStorage.getItem("duelhippo.groups"))[
+      Object.keys(groups)[0]
+    ].duel.length,
+    1,
+  );
 });
 
 test("leaving: a goodbye, then a one-player title screen", () => {

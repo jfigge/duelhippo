@@ -32,6 +32,7 @@ const $ = (id) => w.document.getElementById(id);
 const S = duel.S,
   P = duel.P;
 const net = fakeServer(w, { role: "guest" });
+const HOST = "a".repeat(64); // the host's player hash
 const ownSpeed = () => +$("bSpeed").textContent.match(/\d+/)[0];
 
 test("joining by code: lower case is fine, and hello goes to the host", async () => {
@@ -42,13 +43,24 @@ test("joining by code: lower case is fine, and hello goes to the host", async ()
   $("onGo").click();
   await tick(10);
   assert.match(net.opened[0], /\/join\/ABCD$/);
-  assert.deepEqual(net.toPeer("hi")[0], { t: "hi", v: 1 });
+  const { h, ...hi } = net.toPeer("hi")[0];
+  assert.deepEqual(hi, { t: "hi", v: 2, n: "Pilot" });
+  assert.match(h, /^[0-9a-f]{64}$/);
 });
 
 test("the host's match, at the host's speed, starts on its go", async () => {
-  net.peer({ t: "setup", v: 1, kind: "coop", mode: "classic", speed: 0.5 });
+  net.peer({
+    t: "setup",
+    v: 2,
+    kind: "coop",
+    mode: "classic",
+    speed: 0.5,
+    h: HOST,
+    n: "Goose",
+  });
+  assert.equal(net.toPeer("board").length, 1, "our copy of the pair's board");
   assert.match($("onMsg").textContent, /Co-op · Classic · 50% speed/);
-  net.peer({ t: "go" });
+  net.peer({ t: "go", id: "0123456789abcdef" });
   await tick(3200);
   assert.equal(duel.state, "play");
   assert.equal(duel.net.role, "guest");

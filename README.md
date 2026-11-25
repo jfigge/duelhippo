@@ -41,6 +41,31 @@ Only game time slows down: flight, enemies, bullets, timers and the chase
 camera. Messages and menus keep real time. At 100% the game runs exactly as
 the prototype did.
 
+## Scoreboards
+
+**One player:** a single high-score board for everyone, kept on the match
+server. Open it with **SCORES** on the title or game-over card.
+- Players sign it with three letters, A to Z. That's all, to leave little
+  room for rude words; the server checks it too.
+- Behind the initials is a random player id, made the first time the game
+  runs and never shown. Each id has one row, its best score, so two players
+  who both pick "ACE" stay separate, and a new best replaces only your own.
+- The board shows the top ten and where you stand worldwide.
+- A score that can't be sent (offline, or no initials yet) waits on the
+  device and goes with the next try.
+- A build without `NET_URL` has no board; the local best score still works.
+
+**Two player:** every pair of players has its own board, which lives only on
+their devices.
+- Players type a name (up to 12 characters) on the Two player screen.
+- The board belongs to the group: it's named by a hash of each player's id
+  hash, so the same friends meeting again see their board, and a different
+  line-up sees a different one. Raw ids never leave the device, so a friend
+  can't post to the one-player board as you.
+- Duels rank by the best single score, co-op games by the team total.
+- Each player keeps a copy. When the group meets, both send theirs and each
+  keeps the two merged, so a lost copy comes back from the other player.
+
 ## Two player
 
 **Two player** on the title screen pairs two copies of the game over the

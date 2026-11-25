@@ -33,6 +33,11 @@ export const net = {
   role: null, // "host" | "guest"
   kind: null, // "duel" | "coop"
   link: null, // net/link.js, while connected
+  // Who is playing, for the group scoreboard (scores.js). Hashes, never ids.
+  me: null, // {h, n}: this player's hash and match name
+  peer: null, // {h, n}: the other player's
+  group: null, // the group board's id: a hash of every player's hash
+  match: null, // this match's id, the host's, so both record the same one
 };
 
 // To the other player. `fast` messages (state updates) may be dropped and
