@@ -647,19 +647,79 @@ body.touch .tk {
     color: var(--yl);
   }
 }
+/* A phone held sideways (about 375–430 px tall): every menu fits on one
+   screen without scrolling. The box takes the width instead of the height:
+   the title on one line beside a smaller mascot, the three ways to play side
+   by side, and the intro and key list (the touch controls explain
+   themselves) left out. */
 @media (max-height: 520px) {
+  .ov {
+    padding: calc(8px + var(--st)) calc(12px + var(--sr)) calc(8px + var(--sb))
+      calc(12px + var(--sl));
+  }
   .box {
-    padding: 14px 18px;
+    max-width: 820px;
+    padding: 12px 18px;
   }
   .box p {
     margin: 6px 0;
     font-size: 18px;
   }
-  .keys {
+  .keys,
+  #titleBody > p:not(.rot) {
     display: none !important;
+  }
+  #mascot {
+    width: 52px;
+  }
+  h1 {
+    font-size: 26px;
+    text-shadow: 3px 3px 0 var(--mg);
+  }
+  h1 br {
+    display: none;
+  }
+  h1 em {
+    margin-left: 0.4em;
+    text-shadow: 3px 3px 0 var(--cy);
+  }
+  h2 {
+    margin-bottom: 6px;
   }
   .modes {
     margin: 8px 0;
+    gap: 10px;
+  }
+  #titleBody .modes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  #titleBody .mode.online {
+    grid-column: auto;
+  }
+  /* Side by side the cards differ in height; their text starts at the top
+     rather than floating to the middle, as a button's would. */
+  .mode {
+    padding: 10px 12px 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .mode span {
+    font-size: 17px;
+  }
+  .foot {
+    margin-top: 8px;
+  }
+  .pick {
+    margin: 6px 0 4px;
+  }
+  .box p.pickNote {
+    font-size: 16px;
+    margin: 2px 0 4px;
+  }
+  .code,
+  #onCode {
+    margin: 8px 0 2px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
