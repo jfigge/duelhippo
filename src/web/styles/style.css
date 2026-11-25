@@ -512,6 +512,68 @@ h2 {
   line-height: 1.2;
   color: #dfe6ff;
 }
+/* Two player: the title button spans both columns. */
+.mode.online {
+  grid-column: 1 / -1;
+  border-color: var(--yl);
+}
+.pick {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 6px;
+}
+.pick button {
+  flex: 1;
+  min-height: 44px;
+  background: #0d1020;
+  border: 3px solid #556;
+  font:
+    400 12px/1.4 "Press Start 2P",
+    monospace;
+  color: #dfe6ff;
+}
+.pick button.on {
+  border-color: var(--yl);
+  color: var(--yl);
+}
+.box p.pickNote {
+  font-size: 18px;
+  color: #aab;
+  margin: 4px 0 8px;
+}
+.code {
+  font:
+    400 clamp(36px, 9vw, 64px)/1.2 "Press Start 2P",
+    monospace;
+  color: var(--yl);
+  text-align: center;
+  letter-spacing: 0.2em;
+  margin: 14px 0 4px;
+}
+#onCode {
+  display: block;
+  width: 100%;
+  margin: 14px 0 4px;
+  padding: 10px;
+  background: #0d1020;
+  border: 3px solid var(--cy);
+  color: var(--yl);
+  text-align: center;
+  font:
+    400 32px/1.2 "Press Start 2P",
+    monospace;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+#onMsg.bad {
+  color: var(--mg);
+}
+#onLink {
+  color: var(--cy);
+}
+.stats i {
+  font-style: normal;
+}
 .keys {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

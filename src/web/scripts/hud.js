@@ -31,6 +31,8 @@ import { tickMsg } from "./msg.js";
 import { groundY, targets, hippos } from "./world.js";
 import { P, PB } from "./flight.js";
 import { enemies } from "./ai.js";
+import { R } from "./remote.js";
+import { net, isDuel } from "./net/bus.js";
 
 let hudT = 0,
   rc = null,
@@ -61,6 +63,10 @@ export function hud(dt) {
   $("hAlt").textContent = Math.round(alt);
   $("hAmmo").textContent = Math.floor(P.ammo);
   $("hBombs").textContent = P.bombs;
+  if (net.on) {
+    $("hRival").textContent = R.score;
+    $("hRivalLives").textContent = R.lives;
+  }
   $("bThr").style.width = P.thr * 100 + "%";
   $("bFuel").style.width = P.fuel + "%";
   $("bDmg").style.width = P.dmg + "%";
@@ -113,6 +119,8 @@ function drawRadar() {
   dot(EB.x, EB.z, "#ff55ff", 10);
   for (const t of targets) if (t.alive) dot(t.x, t.z, "#ffff55", 7);
   for (const e of enemies) if (e.alive) dot(e.pos.x, e.pos.z, "#ff55ff", 9);
+  if (net.on && R.alive)
+    dot(R.pos.x, R.pos.z, isDuel() ? "#ff55ff" : "#ffff55", 13);
   rc.fillStyle = "#fff";
   rc.beginPath();
   rc.moveTo(R, R - 10);
@@ -151,6 +159,10 @@ function drawStrip() {
   sc.fillStyle = "#ff55ff";
   for (const e of enemies)
     if (e.alive) sc.fillRect(X(e.pos.x) - 4, Y(e.pos.y) - 4, 8, 8);
+  if (net.on && R.alive) {
+    sc.fillStyle = isDuel() ? "#ff55ff" : "#ffff55";
+    sc.fillRect(X(R.pos.x) - 5, Y(R.pos.y) - 5, 10, 10);
+  }
   if (P.alive) {
     sc.fillStyle = "#fff";
     sc.fillRect(X(P.pos.x) - 5, Y(P.pos.y) - 5, 10, 10);

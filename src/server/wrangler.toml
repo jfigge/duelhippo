@@ -1,0 +1,15 @@
+# Duel Hippo's match server. `make server` runs it locally; `make
+# server-deploy` publishes it to <name>.<your-subdomain>.workers.dev.
+name = "duelhippo-net"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# SQLite-backed, the kind the Workers Free plan offers. The rooms store
+# nothing; the class only needs to exist.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

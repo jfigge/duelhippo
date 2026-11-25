@@ -1,0 +1,16 @@
+{
+  "name": "duelhippo-net",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Duel Hippo's match server: a Cloudflare Worker that pairs two players by room code",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "^4.168.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261123.1": true,
+    "fsevents": false
+  }
+}

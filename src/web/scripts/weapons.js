@@ -34,6 +34,9 @@ import { say } from "./msg.js";
 import { groundY, targets, hurtTarget, hippos, scareHippo } from "./world.js";
 import { P, PB } from "./flight.js";
 import { enemies, killEnemy } from "./ai.js";
+import { R } from "./remote.js";
+import { net, send, isDuel, isGuest } from "./net/bus.js";
+import { v3, unit3 } from "./net/protocol.js";
 
 // ── Bullets ─────────────────────────────────────────────────────────────────
 export const bullets = [];
@@ -48,8 +51,11 @@ const bMatP = new THREE.MeshBasicMaterial({ color: 0xfff27a }),
 // was always taken from `dir` first, so no gameplay number moves.
 const aim = new V();
 
-// `own` is 'p' for the player's rounds, 'e' for an enemy's.
+// `own` is 'p' for the player's rounds, 'e' for an enemy's, and in a match
+// 'r' for the other player's (net/match.js fires those as they report them).
 export function fire(pos, dir, spd, own) {
+  if (net.on && own === "p")
+    send({ t: "f", o: v3(pos), d: unit3(dir), s: spd });
   let b = bullets.find((b) => !b.on);
   if (!b) {
     if (bullets.length > 240) return;
@@ -59,7 +65,8 @@ export function fire(pos, dir, spd, own) {
   }
   b.on = true;
   b.own = own;
-  b.m.material = own === "p" ? bMatP : bMatE;
+  // A rival's rounds are the enemy's magenta; a wingman's are the player's.
+  b.m.material = own === "p" || (own === "r" && !isDuel()) ? bMatP : bMatE;
   b.m.visible = true;
   b.m.position.copy(pos);
   b.v.copy(dir).multiplyScalar(spd);
@@ -75,16 +82,39 @@ export function updBullets(dt) {
     b.life -= dt;
     const p = b.m.position;
     let hit = false;
-    if (b.own === "p") {
+    if (b.own === "r") {
+      // The other player's round. It can only hurt this plane, and only in
+      // a duel: the machine that is hit decides, then says so by crashing.
+      // Elsewhere it is for show, as their machine does the damage.
+      if (isDuel() && P.alive && segD2(b.p0, p, P.pos) < 22) {
+        hit = true;
+        P.hitBy = "r";
+        P.dmg = Math.min(100, P.dmg + 6);
+        sfx.hit();
+        puff(P.pos, 0xff55ff, 3, 6, 0.6, 0.3);
+        if (P.dmg >= 100) say("Engine hit! Going down…", 2.5);
+      }
+    } else if (b.own === "p") {
       for (const e of enemies)
         if (e.alive && segD2(b.p0, p, e.pos) < 40) {
           hit = true;
-          e.hp--;
           puff(e.pos, 0xfff27a, 3, 8, 0.7, 0.3);
           sfx.hit();
+          // A co-op guest's flyers are the host's: report the hit.
+          if (isGuest()) {
+            send({ t: "eh", i: enemies.indexOf(e) });
+            break;
+          }
+          e.hp--;
           if (e.hp <= 0) killEnemy(e, true);
           break;
         }
+      // A rival hit: sparks only; their machine takes the damage.
+      if (!hit && isDuel() && R.alive && segD2(b.p0, p, R.pos) < 22) {
+        hit = true;
+        puff(R.pos, 0xfff27a, 3, 6, 0.6, 0.3);
+        sfx.hit();
+      }
       if (!hit)
         for (const t of targets)
           if (t.alive && p.y < t.h && Math.hypot(p.x - t.x, p.z - t.z) < t.r) {
@@ -101,6 +131,7 @@ export function updBullets(dt) {
           }
     } else if (P.alive && segD2(b.p0, p, P.pos) < 22) {
       hit = true;
+      P.hitBy = "e";
       P.dmg = Math.min(100, P.dmg + 6);
       sfx.hit();
       puff(P.pos, 0xff55ff, 3, 6, 0.6, 0.3);
@@ -120,6 +151,21 @@ export function updBullets(dt) {
 // ── Bombs ───────────────────────────────────────────────────────────────────
 export const bombs = [];
 
+// A pooled bomb: an idle one, or a new one.
+function freeBomb() {
+  let b = bombs.find((b) => !b.on);
+  if (!b) {
+    const m = new THREE.Group();
+    put(m, box(0.55, 0.55, 1.6, 0x2e2e2e), 0, 0, 0);
+    put(m, box(1.1, 0.08, 0.4, 0x2e2e2e), 0, 0, 0.75);
+    put(m, box(0.08, 1.1, 0.4, 0x2e2e2e), 0, 0, 0.75);
+    scene.add(m);
+    b = { m, v: new V() };
+    bombs.push(b);
+  }
+  return b;
+}
+
 export function dropBomb() {
   if (
     game.state !== "play" ||
@@ -133,21 +179,14 @@ export function dropBomb() {
     return;
   P.bombs--;
   P.bombCd = 0.45;
-  let b = bombs.find((b) => !b.on);
-  if (!b) {
-    const m = new THREE.Group();
-    put(m, box(0.55, 0.55, 1.6, 0x2e2e2e), 0, 0, 0);
-    put(m, box(1.1, 0.08, 0.4, 0x2e2e2e), 0, 0, 0.75);
-    put(m, box(0.08, 1.1, 0.4, 0x2e2e2e), 0, 0, 0.75);
-    scene.add(m);
-    b = { m, v: new V() };
-    bombs.push(b);
-  }
+  const b = freeBomb();
   basis(P.q, PB);
   b.on = true;
   b.m.visible = true;
   b.m.position.copy(P.pos).addScaledVector(PB.u, -2.2);
   b.v.copy(P.vel);
+  b.shown = false;
+  if (net.on) send({ t: "b", p: v3(b.m.position), v: v3(b.v) });
   // The whistle lasts exactly the fall time, h = vd·t + ½·G·t² solved for t,
   // in real seconds — so stretched when the game is slowed down.
   const h = Math.max(
@@ -156,6 +195,18 @@ export function dropBomb() {
     ),
     vd = Math.max(0, -b.v.y);
   b.snd = sfx.whistle((-vd + Math.sqrt(vd * vd + 2 * G * h)) / G / opt.speed);
+}
+
+// The other player's bomb, for show: where it lands is their machine's to
+// judge, and it reports any building it hits.
+export function showBomb(pos, vel) {
+  const b = freeBomb();
+  b.on = true;
+  b.shown = true;
+  b.snd = null;
+  b.m.visible = true;
+  b.m.position.copy(pos);
+  b.v.copy(vel);
 }
 
 export function updBombs(dt) {
@@ -170,6 +221,7 @@ export function updBombs(dt) {
       b.m.visible = false;
       if (b.snd) b.snd.stop();
       boom(p, true);
+      if (b.shown) continue;
       for (const t of targets)
         if (t.alive && Math.hypot(p.x - t.x, p.z - t.z) < t.r + 12)
           hurtTarget(t, 12, p.clone());

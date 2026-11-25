@@ -34,6 +34,13 @@ DEVTOOLS ?= 0
 IOS_SIM  ?= iPhone 17 Pro
 DEVICE   ?=
 PHONE    ?=
+# Two player: the match server's address. Every build uses it: production
+# ones bake it in, and make web / debug / ios-live play through it too. Empty,
+# the dev targets use `make server` on SERVER_PORT instead (so `make web
+# NET_URL=` tests a server change locally), and a production build offers no
+# two-player.
+NET_URL     ?=
+SERVER_PORT ?= 8787
 -include $(WORKSPACE)/dev.env
 
 # ── Release signing ───────────────────────────────────────────────────────────
@@ -74,7 +81,9 @@ LIVE_HOST  ?= $(if $(strip $(DEVICE)),$(shell ipconfig getifaddr en0 2>/dev/null
 
 .PHONY: help install debug web web-build web-preview ios ios-phone ios-live \
         ios-sync ios-launch ios-open ios-list build dist-mac dist-win \
-        dist-linux icons site test lint fmt fmt-check license-headers clean
+        dist-linux icons site ios-archive ios-upload ios-submit server \
+        server-deploy server-install test lint fmt \
+        fmt-check license-headers clean
 
 help:
 	@echo ""
@@ -103,6 +112,18 @@ help:
 	@echo "    ios-sync      Copy the bundle into the Xcode project"
 	@echo "    ios-open      Open the Xcode project"
 	@echo "    ios-list      List simulators and phones ios can target"
+	@echo ""
+	@echo "  App Store:"
+	@echo "    ios-archive   Release archive of the iPhone app → build/ios/"
+	@echo "    ios-upload    Archive, then upload to App Store Connect (TestFlight)"
+	@echo "    ios-submit    Put that build up for App Store review"
+	@echo "                  (BUILD_NUMBER_SUBMIT=<the upload's build number>)"
+	@echo ""
+	@echo "  Two player (src/server, a Cloudflare Worker):"
+	@echo "    server        Run the match server locally on SERVER_PORT ($(SERVER_PORT)); the"
+	@echo "                  dev targets use it when NET_URL is empty (make web NET_URL=)"
+	@echo "    server-deploy Publish it to Cloudflare (once: npx wrangler login); then"
+	@echo "                  set NET_URL to the wss:// address it prints"
 	@echo ""
 	@echo "  Publish:"
 	@echo "    site          Test, then copy the web build into a hippoherd checkout"
@@ -135,14 +156,16 @@ install: $(SRC_DIR)/node_modules
 # ─── Run ──────────────────────────────────────────────────────────────────────
 debug: install
 	@cd "$(SRC_DIR)" && DEV_PORT=$(WEB_PORT) INSPECT=$(INSPECT) DEVTOOLS=$(DEVTOOLS) \
+		VITE_NET_URL="$(NET_URL)" \
 		USER_DATA_DIR="$(DATA_DIR)" node tools/dev-electron.mjs
 
 web: install
-	@cd "$(SRC_DIR)" && WEB_PORT=$(WEB_PORT) "$(BIN)/vite" --host $(WEB_HOST) --open
+	@cd "$(SRC_DIR)" && WEB_PORT=$(WEB_PORT) VITE_NET_URL="$(NET_URL)" \
+		"$(BIN)/vite" --host $(WEB_HOST) --open
 
 # ─── Build ────────────────────────────────────────────────────────────────────
 web-build: install
-	@cd "$(SRC_DIR)" && "$(BIN)/vite" build
+	@cd "$(SRC_DIR)" && VITE_NET_URL="$(NET_URL)" "$(BIN)/vite" build
 	@echo "  → $(WWW_DIR)/"
 
 web-preview: web-build
@@ -237,6 +260,47 @@ ios-phone:
 	fi
 	@$(MAKE) ios DEVICE=$(PHONE)
 
+# ─── App Store ────────────────────────────────────────────────────────────────
+# The Release workflow runs these on a tag; they run the same way here.
+#
+# Signing is automatic for team 2C564TQ2FY. On this Mac, Xcode's own signed-in
+# account does it. In CI there is no account, so the App Store Connect API key
+# (APPLE_API_KEY, a .p8 path, with APPLE_API_KEY_ID and APPLE_API_ISSUER — the
+# same three names release.env and the sibling workflows use) authorises
+# xcodebuild to fetch profiles and upload.
+#
+# Every upload needs a build number App Store Connect has never seen, rising
+# within the version. yyDDDHHMM (UTC) does that from any machine without a
+# counter to keep, and stays under 2^31.
+IOS_ARCHIVE  := $(WORKSPACE)/build/ios/Duel-Hippo.xcarchive
+IOS_EXPORT   := $(WORKSPACE)/build/ios/export
+ifeq ($(strip $(BUILD_NUMBER)),)
+BUILD_NUMBER := $(shell date -u +%y%j%H%M)
+endif
+ASC_AUTH := $(if $(strip $(APPLE_API_KEY)),-authenticationKeyPath "$(APPLE_API_KEY)" \
+	-authenticationKeyID "$(APPLE_API_KEY_ID)" -authenticationKeyIssuerID "$(APPLE_API_ISSUER)")
+
+# ios-sync rewrites the app's capacitor.config.json, so an archive never
+# carries ios-live's dev-server URL.
+ios-archive: ios-sync
+	@echo "Archiving Duel Hippo $(VERSION) ($(BUILD_NUMBER))…"
+	cd "$(SRC_DIR)/ios/App" && xcodebuild -project App.xcodeproj -scheme App \
+		-configuration Release -destination generic/platform=iOS \
+		-archivePath "$(IOS_ARCHIVE)" -allowProvisioningUpdates $(ASC_AUTH) \
+		MARKETING_VERSION=$(VERSION) CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) \
+		-quiet archive
+	@echo "  → $(IOS_ARCHIVE)"
+
+ios-upload: ios-archive
+	xcodebuild -exportArchive -archivePath "$(IOS_ARCHIVE)" \
+		-exportOptionsPlist "$(SRC_DIR)/ios/ExportOptions.plist" \
+		-exportPath "$(IOS_EXPORT)" -allowProvisioningUpdates $(ASC_AUTH)
+	@echo "Uploaded $(VERSION) ($(BUILD_NUMBER)). It shows in TestFlight once Apple has processed it."
+
+ios-submit:
+	@test -n "$(BUILD_NUMBER_SUBMIT)" || { echo "Set BUILD_NUMBER_SUBMIT to the build ios-upload printed."; exit 1; }
+	cd "$(SRC_DIR)" && node tools/asc-submit.mjs --version $(VERSION) --build $(BUILD_NUMBER_SUBMIT)
+
 # The app loads from the Vite dev server instead of its bundled copy, so saves
 # reload on the device. This is what `cap run --live-reload` does, done by
 # hand so it works on the phone too: point the synced config's server.url at
@@ -249,7 +313,7 @@ ios-live: ios-sync
 		c.server = { url: "http://$(LIVE_HOST):$(WEB_PORT)", cleartext: true }; \
 		fs.writeFileSync(f, JSON.stringify(c, null, 2));'
 	@cd "$(SRC_DIR)" && { \
-		WEB_PORT=$(WEB_PORT) "$(BIN)/vite" --host 0.0.0.0 & vite=$$!; \
+		WEB_PORT=$(WEB_PORT) VITE_NET_URL="$(NET_URL)" "$(BIN)/vite" --host 0.0.0.0 & vite=$$!; \
 		trap 'kill $$vite 2>/dev/null' EXIT INT TERM; \
 		until curl -s -o /dev/null http://localhost:$(WEB_PORT)/; do sleep 0.3; done; \
 		$(MAKE) -s -C "$(WORKSPACE)" ios-launch DEVICE="$(DEVICE)" || exit 1; \
@@ -270,10 +334,31 @@ ios-list: install
 	@echo "Phones (DEVICE=<udid>; \`unavailable\` means locked, asleep or not connected):"
 	@xcrun devicectl list devices 2>/dev/null | tail -n +3
 
+# ─── Two player: the match server ─────────────────────────────────────────────
+# src/server has its own package.json, so wrangler (and the workerd runtime
+# it brings) is installed only by these targets, never by the game's builds.
+SERVER_DIR := $(SRC_DIR)/server
+WRANGLER   := $(SERVER_DIR)/node_modules/.bin/wrangler
+
+$(SERVER_DIR)/node_modules: $(SERVER_DIR)/package.json $(SERVER_DIR)/package-lock.json
+	cd "$(SERVER_DIR)" && npm ci --no-audit --no-fund
+	@touch "$(SERVER_DIR)/node_modules"
+
+server-install: $(SERVER_DIR)/node_modules
+
+# On every interface, so a phone on the LAN (make ios-live) reaches it.
+server: server-install
+	cd "$(SERVER_DIR)" && "$(WRANGLER)" dev --ip 0.0.0.0 --port $(SERVER_PORT)
+
+server-deploy: server-install
+	cd "$(SERVER_DIR)" && node --test tests/ && "$(WRANGLER)" deploy
+	@echo "Set NET_URL=wss://<the workers.dev address above> in dev.env and as the"
+	@echo "repository variable NET_URL, so builds can find the server."
+
 # ─── Check ────────────────────────────────────────────────────────────────────
 test: install
 	@cd "$(SRC_DIR)" && node tools/license-header.mjs --check
-	@cd "$(SRC_DIR)" && node --test --test-timeout=120000 "app/tests/*.test.js" "web/scripts/tests/*.test.js"
+	@cd "$(SRC_DIR)" && node --test --test-timeout=120000 "app/tests/*.test.js" "web/scripts/tests/*.test.js" "tools/tests/*.test.mjs" "server/tests/*.test.mjs"
 
 lint: install
 	@cd "$(SRC_DIR)" && "$(BIN)/eslint" .

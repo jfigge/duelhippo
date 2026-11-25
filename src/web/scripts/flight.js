@@ -74,6 +74,8 @@ import {
   hippos,
 } from "./world.js";
 import { fire } from "./weapons.js";
+import { net, send, isDuel, isGuest } from "./net/bus.js";
+import { v3 } from "./net/protocol.js";
 
 export const PB = basis(new Q()); // the player's basis, recomputed in place
 
@@ -97,6 +99,10 @@ export const P = {
   ph: 0,
   phT: 0,
   svc: 0,
+  // Two-player only: the runway this plane belongs to (HOME, or EB for the
+  // duel's guest), and who did the last damage ("r": the other player).
+  base: HOME,
+  hitBy: null,
 };
 P.obj = makePlane(0xf2f2ea, 0x3fd8e8, 0x55ffff, 0x14a0b4);
 scene.add(P.obj);
@@ -105,10 +111,22 @@ P.shadow = blob();
 export const crashAt = new V();
 
 export function resetPlayer() {
-  P.pos.set(HOME.x - 190, GEAR, 0);
-  P.th = 0;
-  P.ph = P.phT = 0;
-  qSide(P.q, 0, 0);
+  P.base = HOME;
+  P.hitBy = null;
+  if (isDuel() && isGuest()) {
+    // The duel's guest starts at the far runway, facing home.
+    P.base = EB;
+    P.pos.set(EB.x + 190, GEAR, 0);
+    P.th = PI;
+    P.ph = P.phT = PI;
+    qSide(P.q, PI, PI);
+  } else {
+    // A co-op guest lines up ahead of the host on the same runway.
+    P.pos.set(HOME.x - (net.on && isGuest() ? 120 : 190), GEAR, 0);
+    P.th = 0;
+    P.ph = P.phT = 0;
+    qSide(P.q, 0, 0);
+  }
   P.vel.set(0, 0, 0);
   P.speed = 0;
   P.sink = 0;
@@ -230,9 +248,10 @@ export function updPlayer(dt) {
   if (game.mode === "classic") P.pos.z = 0;
 
   // ── Ground contact: land, or crash ────────────────────────────────────────
+  // "Home" is this plane's own runway: HOME, except for the duel's guest.
   const gy = groundY(P.pos.x, P.pos.z) + GEAR,
-    onHome = onRun(P.pos, HOME),
-    onRw = onHome || onRun(P.pos, EB);
+    onHome = onRun(P.pos, P.base),
+    onRw = onHome || onRun(P.pos, P.base === HOME ? EB : HOME);
   if (!P.grounded && P.pos.y <= gy) {
     const vs = -P.vel.y,
       along = game.mode === "classic" || Math.abs(b.f.z) < 0.35;
@@ -362,6 +381,13 @@ function service(dt) {
 }
 
 export function crash(pos, why) {
+  // The other player learns where, and whether they get the kill.
+  if (net.on)
+    send({
+      t: "down",
+      p: v3(pos),
+      by: P.hitBy === "r" && P.dmg >= 100 ? "you" : null,
+    });
   crashAt.copy(pos);
   boom(pos, true);
   puff(pos, 0x333333, 10, 5, 3, 3, 7);

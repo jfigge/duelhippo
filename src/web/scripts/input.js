@@ -136,6 +136,8 @@ export function bindInput(actions) {
   act = actions;
 
   window.addEventListener("keydown", (e) => {
+    // Typing a room code is not flying.
+    if (e.target instanceof window.HTMLInputElement) return;
     if (PREVENT.includes(e.code)) e.preventDefault();
     if (STEER.includes(e.code)) touch.flying = false;
     if (!key[e.code]) press(e.code);

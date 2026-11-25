@@ -28,7 +28,7 @@
 
 import * as THREE from "three";
 import { $ } from "./util.js";
-import { BEST_KEY, SPEEDS, SPEED_KEY } from "./constants.js";
+import { BEST_KEY, SPEEDS, SPEED_KEY, DUEL_TDEF } from "./constants.js";
 import { scene, camera } from "./scene.js";
 import { S, game, opt } from "./state.js";
 import { sfx } from "./audio.js";
@@ -48,6 +48,10 @@ import { bullets, bombs, dropBomb, updBullets, updBombs } from "./weapons.js";
 import { isTouch, releaseKeys, bindInput } from "./input.js";
 import { updCamera } from "./camera.js";
 import { hud, initHud } from "./hud.js";
+import { R, resetRemote, hideRemote } from "./remote.js";
+import { net, isHost, isCoop, isDuel } from "./net/bus.js";
+import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
+import { initLobby, matchEnded, rematch, leave } from "./net/lobby.js";
 
 let renderer = null;
 
@@ -62,17 +66,22 @@ function update(dt) {
     if (S.lives > 0) {
       resetPlayer();
       say("New plane on the runway", 2);
-    } else return gameOver();
+    } else if (net.on) outOfPlanes();
+    else return gameOver();
   }
   syncShadow(P.shadow, P.pos, P.alive);
 
-  const maxE = Math.min(5, 2 + Math.floor(S.kills / 4) + S.wave);
-  S.spawnT -= dt;
-  if (S.spawnT <= 0 && enemies.filter((e) => e.alive).length < maxE) {
-    spawnEnemy();
-    S.spawnT = 5;
+  // The AI flyers: a one-player game's, or a co-op host's. A duel has none,
+  // and a co-op guest draws the host's (net/match.js).
+  if (!net.on || (isHost() && isCoop())) {
+    const maxE = Math.min(5, 2 + Math.floor(S.kills / 4) + S.wave);
+    S.spawnT -= dt;
+    if (S.spawnT <= 0 && enemies.filter((e) => e.alive).length < maxE) {
+      spawnEnemy();
+      S.spawnT = 5;
+    }
+    for (const e of enemies) if (e.alive) updEnemy(e, dt);
   }
-  for (const e of enemies) if (e.alive) updEnemy(e, dt);
   if (S.rebuildT > 0 && (S.rebuildT -= dt) <= 0) {
     buildTargets();
     say("The enemy rebuilt their town!", 2.5);
@@ -117,7 +126,7 @@ export function startGame(m) {
     h.alive = true;
     h.g.visible = true;
   }
-  buildTargets();
+  buildTargets(isDuel() ? DUEL_TDEF : undefined);
   resetPlayer();
   game.camZoom = 0;
   camera.position.set(P.pos.x, 20, 90);
@@ -127,15 +136,20 @@ export function startGame(m) {
   $("hud").classList.remove("off");
   $("touchui").classList.toggle("hidden", !isTouch);
   say(
-    isTouch
-      ? "Push the throttle up, then pull back on the stick to lift off"
-      : "W to throttle up, then Down arrow to lift off",
+    isDuel()
+      ? "Take off, shoot your rival down and flatten their town"
+      : isCoop()
+        ? "Take off with your wingman and hit the magenta flyers' town"
+        : isTouch
+          ? "Push the throttle up, then pull back on the stick to lift off"
+          : "W to throttle up, then Down arrow to lift off",
     4.5,
   );
   if (renderer) renderer.domElement.focus();
 }
 
 function gameOver() {
+  overScreen(false);
   game.state = "over";
   P.obj.visible = false;
   if (S.score > S.best) {
@@ -155,21 +169,123 @@ function gameOver() {
 }
 
 export function setPause(v) {
+  // A match cannot stop for one player: the menu opens over a game that
+  // carries on.
+  if (net.on) {
+    $("pTitle").textContent = "Match menu";
+    $("pauseFoot").classList.add("hidden");
+    $("pause").classList.toggle("hidden", !v);
+    return;
+  }
+  $("pTitle").textContent = "Paused";
+  $("pauseFoot").classList.remove("hidden");
   game.paused = v;
   $("pause").classList.toggle("hidden", !v);
   if (v) releaseKeys();
 }
 
+// ── Two player ──────────────────────────────────────────────────────────────
+// The lobby (net/lobby.js) connects the two machines and calls startMatch
+// on both at once. The host's game speed is the match's; the player's own
+// setting is put back afterwards.
+let ownSpeed = null;
+
+function startMatch({ kind, mode, speed }) {
+  net.on = true;
+  net.kind = kind;
+  if (ownSpeed === null) ownSpeed = opt.speed;
+  setSpeed(speed, false);
+  resetRemote(kind);
+  startGame(mode);
+  beginMatch(matchOver);
+  $("hRivalLabel").textContent = kind === "duel" ? "RIVAL" : "WINGMAN";
+  $("hRivalRow").classList.remove("hidden");
+}
+
+const RESULT = {
+  won: "You win!",
+  lost: "You lost",
+  over: "Out of planes",
+  left: "Your friend left",
+};
+
+function matchOver(result) {
+  game.state = "over";
+  P.obj.visible = false;
+  overScreen(true);
+  $("oTitle").textContent = RESULT[result];
+  $("oScore").textContent = S.score;
+  $("oKills").textContent = S.kills;
+  $("oThird").textContent = isDuel() ? "Rival" : "Wingman";
+  $("oBest").textContent = R.score;
+  const again = result !== "left" && matchEnded();
+  $("oAgain").classList.toggle("hidden", !again);
+  $("oNote").textContent =
+    result === "left" ? "" : again ? "" : "The host can start another.";
+  $("over").classList.remove("hidden");
+  $("hud").classList.add("off");
+  $("touchui").classList.add("hidden");
+  setPause(false);
+}
+
+// The over card serves both: one player's best score, or a match result.
+function overScreen(match) {
+  $("overMp").classList.toggle("hidden", !match);
+  $("overModes").classList.toggle("hidden", match);
+  if (!match) {
+    $("oTitle").textContent = "Out of planes";
+    $("oThird").textContent = "Best";
+  }
+}
+
+// Leaving a match, by choice or because it ended: back to a one-player title.
+function toTitle() {
+  net.on = false;
+  net.kind = net.role = null;
+  if (ownSpeed !== null) setSpeed(ownSpeed, false);
+  ownSpeed = null;
+  hideRemote();
+  for (const e of enemies) {
+    e.alive = false;
+    e.obj.visible = false;
+    e.shadow.visible = false;
+  }
+  for (const b of bullets) {
+    b.on = false;
+    b.m.visible = false;
+  }
+  for (const b of bombs) {
+    b.on = false;
+    b.m.visible = false;
+    if (b.snd) b.snd.stop();
+  }
+  buildTargets();
+  P.obj.visible = false;
+  P.alive = false;
+  P.shadow.visible = false;
+  game.state = "title";
+  setPause(false);
+  $("hRivalRow").classList.add("hidden");
+  overScreen(false);
+  for (const id of ["over", "pause"]) $(id).classList.add("hidden");
+  $("hud").classList.add("off");
+  $("touchui").classList.add("hidden");
+  $("title").classList.remove("hidden");
+}
+
 // ── Game speed ──────────────────────────────────────────────────────────────
 // Scales game time only: the simulation and the in-play camera slow down,
 // while the HUD, its messages and the title screen keep real time.
-function setSpeed(v) {
+// `persist` is false for a match's speed, which is the host's and lasts the
+// match.
+function setSpeed(v, persist = true) {
   opt.speed = v;
-  try {
-    window.localStorage.setItem(SPEED_KEY, v);
-  } catch {
-    // No storage: the setting lasts the session.
-  }
+  if (persist)
+    try {
+      window.localStorage.setItem(SPEED_KEY, v);
+    } catch {
+      // No storage: the setting lasts the session.
+    }
   const pct = Math.round(v * 100) + "%";
   for (const id of ["bSpeed", "bSpeedPause"])
     $(id).textContent = "SPEED " + pct;
@@ -179,6 +295,7 @@ function setSpeed(v) {
 
 // One step slower (-1) or faster (+1), stopping at the ends.
 function stepSpeed(dir) {
+  if (net.on) return say("The host sets the speed of a match", 1.5);
   const i = SPEEDS.indexOf(opt.speed);
   const next = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, i + dir))];
   if (next !== opt.speed) setSpeed(next);
@@ -188,6 +305,7 @@ function stepSpeed(dir) {
 
 // The buttons cycle: slower and slower, then back to full speed.
 function cycleSpeed() {
+  if (net.on) return;
   const i = SPEEDS.indexOf(opt.speed);
   setSpeed(i <= 0 ? SPEEDS[SPEEDS.length - 1] : SPEEDS[i - 1]);
 }
@@ -219,9 +337,13 @@ function initUI() {
   $("resume").addEventListener("click", () => setPause(false));
   $("quit").addEventListener("click", () => {
     setPause(false);
+    if (net.on) return leave();
     S.lives = 0;
     gameOver();
   });
+  $("oAgain").addEventListener("click", rematch);
+  $("oLeave").addEventListener("click", leave);
+  initLobby({ startMatch, toTitle, speed: () => opt.speed });
   $("bMute").addEventListener("click", () => {
     sfx.init();
     $("bMute").textContent = sfx.toggle() ? "SOUND OFF" : "SOUND ON";
@@ -241,7 +363,8 @@ function initUI() {
   document.addEventListener("visibilitychange", () => {
     const now = window.performance.now();
     if (document.hidden) {
-      if (now < fullscreenBlinkUntil) return;
+      // A match goes on: it cannot wait for one player.
+      if (now < fullscreenBlinkUntil || net.on) return;
       if (game.state === "play" && !game.paused) {
         setPause(true);
         autoPausedAt = now;
@@ -297,6 +420,7 @@ export function boot({ createRenderer }) {
     last = now;
     const live = game.state === "play" && !game.paused;
     if (live) update(gdt);
+    if (net.on) matchFrame(now, gdt, live);
     sfx.engine(P.thr, P.speed, live && P.alive);
     if (!game.paused) updCamera(game.state === "play" ? gdt : dt);
     renderer.render(scene, camera);
@@ -317,6 +441,8 @@ export function boot({ createRenderer }) {
       return game.mode;
     },
     startGame,
+    net,
+    R,
   };
   return true;
 }

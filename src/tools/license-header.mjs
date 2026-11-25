@@ -13,11 +13,14 @@ import path from "node:path";
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 const HEADER = readFileSync(new URL("./header.txt", import.meta.url), "utf8");
 const MARK = "This file is part of Duel Hippo.";
-const ROOTS = ["app", "web/scripts", "web/styles", "tools"];
+const ROOTS = ["app", "web/scripts", "web/styles", "tools", "server"];
+// Installed and generated trees under the roots (src/server has its own).
+const SKIP = new Set(["node_modules", ".wrangler"]);
 const EXT = new Set([".js", ".mjs", ".cjs", ".css"]);
 
 function* walk(dir) {
   for (const name of readdirSync(dir)) {
+    if (SKIP.has(name)) continue;
     const p = path.join(dir, name);
     if (statSync(p).isDirectory()) yield* walk(p);
     else if (EXT.has(path.extname(name))) yield p;

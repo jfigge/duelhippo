@@ -28,7 +28,7 @@ with a seeded `Math.random`. If you change gameplay deliberately, the suite
 will fail. Say so, and agree with the user how to re-baseline it. Do not
 loosen the tolerance to make it pass.
 
-The port adds four things the prototype lacks. None of them changes
+The port adds five things the prototype lacks. None of them changes
 keyboard gameplay at full speed, which is what the equivalence suites run:
 
 - **Game speed.** `opt.speed` scales `dt` in `frame()`, after the 50 ms cap.
@@ -44,6 +44,20 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   control back to the keyboard and turns it off. It is never on in keyboard
   play: `isTouch` is no guide, since touch-screen laptops and jsdom both
   report it. It is tested in `auto-level.test.js`.
+- **Two player** (`scripts/net/`, `remote.js`, `src/server/`). Every hook in
+  the simulation modules is guarded by `net.on` from `net/bus.js`. When it is
+  false, which is every one-player game, the code paths and the order of
+  `Math.random` calls are the prototype's. Keep it that way: a new hook goes
+  behind the guard, and must not add or reorder random draws on the
+  one-player path.
+  - **Authority.** Each machine flies its own plane and decides when that
+    plane is hit or has crashed. The bomber's machine decides when a building
+    is hit. In co-op, the host runs the AI flyers.
+  - **What travels.** The other machine re-fires shots and bombs only for
+    show. The message list is in `net/protocol.js`.
+  - **Tests.** `net-duel.test.js` and `net-coop.test.js` play a match
+    against a scripted peer (`tests/fake-server.js`), and `server/tests` covers
+    the room rules.
 - **Enemy rounds.** These are drawn pointing the way they fly. In the
   prototype, `fire()` aliased `tv` and aimed the mesh wrongly; only the
   drawing changed.
@@ -80,6 +94,9 @@ Rules that follow from this:
 - `state`
 - `constants`
 - `util`
+- `remote`: the other player's plane, drawn from its updates
+- `net/`: two player — `bus` (shared state, imports nothing), `link`,
+  `lobby`, `match`, `protocol`, `config`
 - `game`: flow, update and boot
 - `main`: the browser entry point
 - `platform`: shell detection
@@ -103,12 +120,30 @@ passed to `bindInput()`, so it imports nothing it controls.
     character, so a change here has to be copied there too.
   - The colour `#279B2B` also appears in hippoherd's `content/hippos.mjs`.
 - **Releases.** Pushing a tag `v<version>` that matches `src/package.json`
-  runs `.github/workflows/release.yml`. Keep the installer names in a form
-  hippoherd's `classify()` understands. That is why the NSIS installer's name
-  contains "Setup": without it, hippoherd reads the `.exe` as a portable build.
+  runs `.github/workflows/release.yml`. It builds the desktop installers,
+  publishes the GitHub Release, pushes the web build to hippoherd, uploads the
+  iPhone app and submits it for review. Each channel is gated on its own
+  secrets and variables.
+  - The CI jobs call the same make targets as local runs (`ios-archive`,
+    `ios-upload`), so change the targets, not the YAML.
+  - Keep the installer names in a form hippoherd's `classify()` understands.
+    That is why the NSIS installer's name contains "Setup": without it,
+    hippoherd reads the `.exe` as a portable build.
+  - A workflow-dispatch run must never publish anything.
 - **The website.** `make site` copies `src/www` into
   `../hippoherd/website/duelhippo/`. It leaves `about/` alone, because
   hippoherd generates that page.
+
+## The match server
+`src/server/` is a Cloudflare Worker with its own `package.json`, because
+wrangler is large and the game builds don't need it.
+- `room.js` holds the rules and is tested under Node.
+- `worker.js` wires those rules to a Durable Object that uses the WebSocket
+  Hibernation API, which keeps it on the free plan.
+- The server never reads game messages; it forwards them.
+- Keep the protocol version (`PROTO` in `net/protocol.js`) in step. Bump it
+  whenever messages change shape, so that mismatched builds refuse to play
+  rather than misbehave.
 
 ## Conventions
 - **License header.** Every first-party JS, MJS and CSS file under `src/app`,

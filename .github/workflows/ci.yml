@@ -1,0 +1,74 @@
+name: CI
+
+# Every push to main and every pull request: the checks `make test`, `make
+# lint` and `make fmt-check` run locally, the web build, and the iPhone app
+# compiled for the simulator (no signing), so a change that breaks one shell
+# is caught before a tag finds it. Releases are release.yml.
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Tests, lint, format, web build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - name: Licence headers
+        run: node tools/license-header.mjs --check
+      # Includes the equivalence suite: the port against the prototype, frame
+      # by frame.
+      - name: Tests
+        run: node --test --test-timeout=120000 "app/tests/*.test.js" "web/scripts/tests/*.test.js" "tools/tests/*.test.mjs" "server/tests/*.test.mjs"
+      - name: Lint
+        run: node_modules/.bin/eslint .
+      - name: Format
+        run: node_modules/.bin/prettier --check .
+      - name: Web build
+        run: node_modules/.bin/vite build
+
+  ios:
+    name: iPhone app (simulator, unsigned)
+    needs: checks
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - name: Build and sync the web bundle
+        working-directory: src
+        run: |
+          npm ci --no-audit --no-fund
+          node_modules/.bin/vite build
+          node_modules/.bin/cap sync ios
+
+      - name: Compile for the simulator
+        working-directory: src/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO -quiet build

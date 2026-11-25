@@ -13,7 +13,15 @@ const rules = {
 };
 
 module.exports = [
-  { ignores: ["node_modules/**", "www/**", "ios/**", "../dist/**"] },
+  {
+    ignores: [
+      "node_modules/**",
+      "www/**",
+      "ios/**",
+      "../dist/**",
+      "server/.wrangler/**",
+    ],
+  },
   js.configs.recommended,
   {
     // The game: browser ES modules.
@@ -39,6 +47,21 @@ module.exports = [
       globals: globals.node,
     },
     rules,
+  },
+  {
+    // The match server: a Cloudflare Worker (ES modules, service-worker-style
+    // globals), and its tests under Node.
+    files: ["server/**/*.js", "server/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: { ...globals.serviceworker, WebSocketPair: "readonly" },
+    },
+    rules,
+  },
+  {
+    files: ["server/tests/**/*.mjs"],
+    languageOptions: { globals: globals.node },
   },
   {
     // Build tooling.

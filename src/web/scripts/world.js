@@ -35,6 +35,8 @@ import { scene, M, box, put, flat } from "./scene.js";
 import { S } from "./state.js";
 import { puff, boom } from "./effects.js";
 import { say } from "./msg.js";
+// Imports nothing itself, so it cannot disturb the evaluation order above.
+import { net, send, isDuel, isCoop } from "./net/bus.js";
 
 export function groundY(x, z) {
   const d = Math.max(Math.abs(x - CX), Math.abs(z));
@@ -285,7 +287,7 @@ export function syncShadow(sh, pos, on) {
 
 // ── The enemy town ──────────────────────────────────────────────────────────
 export const targets = [];
-function makeTarget(kind, x) {
+function makeTarget(kind, x, side) {
   const g = new THREE.Group();
   let r, h, hp, pts, name;
   if (kind === "hangar") {
@@ -337,27 +339,63 @@ function makeTarget(kind, x) {
     name = "Headquarters";
   }
   g.position.set(x, 0, 0);
+  // A duel's host town wears the player's cyan where the enemy's is magenta.
+  if (side === "host")
+    g.traverse((o) => {
+      const c = o.material && o.material.color;
+      if (c && c.getHex() === 0xb03aa0) c.setHex(0x2fc6d6);
+      if (c && c.getHex() === 0xff55ff) c.setHex(0x55ffff);
+    });
   scene.add(g);
-  return { g, kind, name, x, z: 0, r, h, hp, pts, alive: true, smokeT: rnd(1) };
+  return {
+    g,
+    kind,
+    name,
+    x,
+    z: 0,
+    r,
+    h,
+    hp,
+    pts,
+    alive: true,
+    smokeT: rnd(1),
+    side,
+  };
 }
-export function buildTargets() {
+// `defs` is TDEF in a one-player game; a duel passes DUEL_TDEF, whose
+// entries carry the side that owns each building.
+export function buildTargets(defs = TDEF) {
   for (const t of targets) scene.remove(t.g);
   targets.length = 0;
-  for (const d of TDEF) targets.push(makeTarget(d[0], d[1]));
+  for (const d of defs) targets.push(makeTarget(d[0], d[1], d[2]));
 }
-export function hurtTarget(t, n, pos) {
-  if (!t.alive) return;
-  t.hp -= n;
-  if (t.hp > 0) {
-    puff(pos, 0xffd27a, 3, 8, 0.8, 0.35, 2);
-    return;
-  }
+// A duel rebuilds one side's town; the other side's stands as it is.
+export function rebuildSide(side, defs) {
+  defs.forEach((d, i) => {
+    if (d[2] !== side) return;
+    scene.remove(targets[i].g);
+    targets[i] = makeTarget(d[0], d[1], d[2]);
+  });
+}
+function wreck(t) {
   t.alive = false;
   t.g.scale.y = 0.18;
   t.g.traverse((o) => {
     if (o.material && o.material.color) o.material.color.setHex(0x3b3530);
   });
   boom(tv2.set(t.x, t.h * 0.5, t.z).clone(), true);
+}
+export function hurtTarget(t, n, pos) {
+  if (!t.alive) return;
+  t.hp -= n;
+  // In a match, whoever does the damage reports it (net/protocol.js "tg").
+  if (net.on) send({ t: "tg", i: targets.indexOf(t), hp: t.hp });
+  if (t.hp > 0) {
+    puff(pos, 0xffd27a, 3, 8, 0.8, 0.35, 2);
+    return;
+  }
+  wreck(t);
+  if (isDuel()) return duelWreck(t, true);
   S.score += t.pts;
   say(t.name + " destroyed  +" + t.pts, 1.8);
   if (targets.every((t) => !t.alive)) {
@@ -366,6 +404,38 @@ export function hurtTarget(t, n, pos) {
     say("Enemy town flattened!  +1000", 4);
     S.rebuildT = 30;
   }
+}
+// The other player's damage to a building, as they reported it. It scores
+// on their side, not here.
+export function applyTarget(i, hp) {
+  const t = targets[i];
+  if (!t || !t.alive || !Number.isFinite(hp)) return;
+  t.hp = Math.min(t.hp, hp);
+  if (t.hp > 0) return;
+  wreck(t);
+  if (isDuel()) return duelWreck(t, false);
+  say(t.name + " destroyed by your wingman", 1.8);
+  if (isCoop() && targets.every((t) => !t.alive)) {
+    S.wave++;
+    say("Enemy town flattened!", 4);
+    S.rebuildT = 30;
+  }
+}
+// A duel building down: points only for the other side's buildings, and a
+// town bonus, then a rebuild, when the last of a side's buildings falls.
+// S.rebuild holds a timer per side (net/match.js runs it).
+function duelWreck(t, byMe) {
+  const mine = t.side === net.role;
+  if (byMe && !mine) {
+    S.score += t.pts;
+    say(t.name + " destroyed  +" + t.pts, 1.8);
+  } else if (mine) say("Your " + t.name.toLowerCase() + " was destroyed!", 1.8);
+  if (targets.some((u) => u.side === t.side && u.alive)) return;
+  if (byMe && !mine) {
+    S.score += 1000;
+    say("Their town flattened!  +1000", 4);
+  } else if (mine) say("Your town is flattened! It rebuilds in 30 s", 4);
+  S.rebuild[t.side] = 30;
 }
 // Factory chimneys smoke while the factory stands.
 export function updTown(dt) {

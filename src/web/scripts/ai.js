@@ -48,6 +48,9 @@ import { say } from "./msg.js";
 import { groundY, makePlane, blob, syncShadow } from "./world.js";
 import { P, crash } from "./flight.js";
 import { fire } from "./weapons.js";
+import { R } from "./remote.js";
+import { isHost, isCoop, send } from "./net/bus.js";
+import { v3, unit3 } from "./net/protocol.js";
 
 export const enemies = [];
 for (let i = 0; i < 6; i++) {
@@ -96,7 +99,10 @@ export function spawnEnemy() {
   e.obj.visible = true;
 }
 
-export function killEnemy(e, scored) {
+// `by` says who gets the kill in co-op, and the host tells the guest; in a
+// one-player game it is just whether the player scored.
+export function killEnemy(e, scored, by = scored ? "host" : null) {
+  if (isHost()) send({ t: "ek", i: enemies.indexOf(e), by });
   boom(e.pos, false);
   e.alive = false;
   e.obj.visible = false;
@@ -110,12 +116,21 @@ export function killEnemy(e, scored) {
 
 const EB_ = basis(new Q());
 
+// Who a flyer hunts: the player — or, on a co-op host, whichever of the two
+// planes in the air is nearer.
+function quarry(e) {
+  if (!isCoop() || !R.alive || R.grounded) return P;
+  if (!P.alive || P.grounded) return R;
+  return P.pos.distanceTo(e.pos) <= R.pos.distanceTo(e.pos) ? P : R;
+}
+
 export function updEnemy(e, dt) {
-  const hunting = P.alive && !P.grounded;
+  const T = quarry(e);
+  const hunting = T.alive && !T.grounded;
   let tgt;
   if (hunting) {
-    const d = P.pos.distanceTo(e.pos);
-    tgt = tv2.copy(P.pos).addScaledVector(P.vel, clamp(d / 440, 0, 1.2));
+    const d = T.pos.distanceTo(e.pos);
+    tgt = tv2.copy(T.pos).addScaledVector(T.vel, clamp(d / 440, 0, 1.2));
   } else {
     e.t += dt * 0.25;
     tgt = tv2.set(
@@ -172,7 +187,7 @@ export function updEnemy(e, dt) {
 
   e.cd -= dt;
   if (hunting && e.cd <= 0) {
-    tv.copy(P.pos).sub(e.pos);
+    tv.copy(T.pos).sub(e.pos);
     const d = tv.length();
     if (d < 420 && b.f.dot(tv.divideScalar(d)) > 0.982) {
       const dir = tv
@@ -186,6 +201,9 @@ export function updEnemy(e, dt) {
         )
         .normalize();
       fire(tv2.copy(e.pos).addScaledVector(b.f, 5), dir, e.speed + 380, "e");
+      // The guest's machine fires the same round, and judges its own hits.
+      if (isHost())
+        send({ t: "ef", o: v3(tv2), d: unit3(dir), s: e.speed + 380 });
       sfx.egun(camera.position.distanceTo(e.pos));
       e.burst++;
       e.cd = e.burst > 7 ? ((e.burst = 0), 1.3) : 0.11;

@@ -6,6 +6,9 @@ build/
 dist/
 data/
 
+# ── The match server's local state (wrangler dev) ──────────────────────────
+src/server/.wrangler/
+
 # ── Node / npm ────────────────────────────────────────────────────────────────
 # Any node_modules, including the Vite cache under src/web/node_modules/.vite.
 node_modules/
