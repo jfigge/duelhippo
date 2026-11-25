@@ -154,7 +154,7 @@ export function fireMissile() {
     return say("Missiles need the sights: Free flight only", 1.4);
   if (!P.msl) return say("No missiles left: land at home to rearm", 1.4);
   if (!locked())
-    return say("No lock: hold the sights on a plane for 5 seconds", 1.4);
+    return say("No lock: hold the sights on a plane for 3 seconds", 1.4);
   const b = basis(P.q, MB),
     tgt = lock.tgt,
     spd = P.speed + MSL.boost;
@@ -243,7 +243,7 @@ export function updMissiles(dt) {
       puff(m.pos, 0xd8d8d8, 1, 1, 0.6, 0.9);
     }
     if (m.tgt && segDist2(m.p0, m.pos, m.tgt.pos) < MSL.fuse * MSL.fuse) hit(m);
-    else if (m.pos.y < groundY(m.pos.x, m.pos.z)) {
+    else if (m.pos.y < groundY(m.pos.x, m.pos.z, m.pos.y)) {
       off(m);
       boom(m.pos.clone(), false);
     } else if (m.life <= 0) {

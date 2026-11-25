@@ -29,6 +29,7 @@ import {
   INVERT_KEY,
   MAPS,
   MAP_KEY,
+  UNLOCK,
   PLANES,
   PLANE_KEY,
   SPEEDS,
@@ -52,6 +53,8 @@ try {
 } catch {
   // No storage (private mode, sandboxed frame): best score is per-session.
 }
+// A map the player has earned (constants.js UNLOCK).
+export const mapOpen = (id) => !UNLOCK[id] || S.best > UNLOCK[id];
 
 export const game = {
   mode: "classic", // 'classic' | 'free'
@@ -75,7 +78,7 @@ try {
   if (plane !== null && PLANES[+plane] && Number.isInteger(+plane))
     opt.plane = +plane;
   const map = window.localStorage.getItem(MAP_KEY);
-  if (Object.hasOwn(MAPS, map)) opt.map = map;
+  if (Object.hasOwn(MAPS, map) && mapOpen(map)) opt.map = map;
 } catch {
   // No storage: full speed, normal pitch and the Kite each session.
 }

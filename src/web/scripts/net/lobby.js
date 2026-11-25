@@ -30,12 +30,13 @@
 // name, and the hashes of everyone on the roster name the group's scoreboard
 // (scores.js), whose copies are swapped and merged as the roster settles.
 
-import { $, setLabel } from "../util.js";
+import { $, setLabel, mapButton, mapButtons } from "../util.js";
 import { net } from "./bus.js";
 import { serverUrl, serverHint } from "./config.js";
 import { Mesh } from "./link.js";
 import { PROTO } from "./protocol.js";
 import { MAPS } from "../constants.js";
+import { mapOpen } from "../state.js";
 import { matchMessage, peerLeft } from "./match.js";
 import {
   LAYOUTS,
@@ -137,8 +138,11 @@ export function initLobby(actions) {
   sel.addEventListener("change", () => organise({ layout: sel.value }));
   for (const b of document.querySelectorAll("[data-gmode]"))
     b.addEventListener("click", () => organise({ mode: b.dataset.gmode }));
+  mapButtons($("onMaps"), "lmap");
   for (const b of document.querySelectorAll("[data-lmap]"))
-    b.addEventListener("click", () => organise({ map: b.dataset.lmap }));
+    b.addEventListener("click", () => {
+      if (mapOpen(b.dataset.lmap)) organise({ map: b.dataset.lmap });
+    });
   $("onFF").addEventListener("click", () => organise({ ff: !setup.ff }));
   $("onStart").addEventListener("click", go);
   $("onBack").addEventListener("click", leave);
@@ -382,9 +386,16 @@ function refresh() {
     b.classList.toggle("on", b.dataset.gmode === setup.mode);
     b.disabled = !boss;
   }
+  // The organiser offers the maps they have earned; the others see theirs.
   for (const b of document.querySelectorAll("[data-lmap]")) {
-    b.classList.toggle("on", b.dataset.lmap === setup.map);
-    b.disabled = !boss;
+    const id = b.dataset.lmap;
+    if (boss) mapButton(b, id, setup.map);
+    else {
+      b.textContent = MAPS[id];
+      b.classList.toggle("on", id === setup.map);
+      b.classList.remove("locked");
+      b.disabled = true;
+    }
   }
   setLabel($("onFF"), "Friendly fire", setup.ff ? "on" : "off");
   $("onFF").classList.toggle("on", setup.ff);

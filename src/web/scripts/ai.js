@@ -89,11 +89,17 @@ export function ensureEnemies(n) {
   while (enemies.length < n) addEnemy(enemies.length);
 }
 
-// The City: flyers keep under its cloud ceiling, and start out over the
-// boulevard if their spot is inside a tower. Elsewhere `below` is y itself.
+// The City: flyers keep under its cloud ceiling. A flyer whose spot is
+// inside something starts clear of it. On the Countryside `below` is y
+// itself and nothing is moved.
 const below = (y) => (land.ceil ? Math.min(y, land.ceil - 70) : y);
 function clearOf(e) {
-  if (land.ceil && groundY(e.pos.x, e.pos.z) > e.pos.y - 40) e.pos.z = 0;
+  if (!land.height) return;
+  const g = groundY(e.pos.x, e.pos.z, e.pos.y);
+  if (g <= e.pos.y - 40) return;
+  // Inside something: over the boulevard in the City, else above it.
+  if (land.ceil) e.pos.z = 0;
+  else e.pos.y = g + 60;
 }
 
 // Whose machine decides what happens to a flyer: this one's, except in a
@@ -198,7 +204,7 @@ export function updEnemy(e, dt) {
     );
   }
   const to = tv.copy(tgt).sub(e.pos);
-  const alt = e.pos.y - groundY(e.pos.x, e.pos.z);
+  const alt = e.pos.y - groundY(e.pos.x, e.pos.z, e.pos.y);
   let b = basis(e.q, EB_);
   if (game.mode === "classic") {
     to.z = 0;
@@ -272,7 +278,8 @@ export function updEnemy(e, dt) {
       e.cd = e.burst > 7 ? ((e.burst = 0), 1.3) : 0.11;
     }
   }
-  if (e.pos.y < groundY(e.pos.x, e.pos.z) + 2) return killEnemy(e, false);
+  if (e.pos.y < groundY(e.pos.x, e.pos.z, e.pos.y) + 2)
+    return killEnemy(e, false);
   if (P.alive && !P.ghost && P.pos.distanceTo(e.pos) < 6.5) {
     killEnemy(e, true);
     return crash(P.pos, "Mid-air collision!");

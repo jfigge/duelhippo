@@ -174,6 +174,31 @@ kbd {
   width: 150px;
   height: 150px;
 }
+/* Lightning, on the Storm map: white over the scene, fading fast. */
+#flash {
+  position: fixed;
+  inset: 0;
+  background: #f4f6ff;
+  opacity: 0;
+  pointer-events: none;
+}
+#flash.on {
+  animation: lightning 0.9s ease-out;
+}
+@keyframes lightning {
+  0% {
+    opacity: 0.85;
+  }
+  12% {
+    opacity: 0.3;
+  }
+  20% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+  }
+}
 #strip {
   position: absolute;
   left: 50%;
@@ -757,11 +782,21 @@ h2 {
   line-height: 1.4;
   color: #c9d0ee;
 }
-/* Team game on the title, Main menu elsewhere: a third card, full width. */
+/* Team game on the title (the fourth card); Main menu elsewhere, full
+   width. The obstacle course is green. */
 .mode.online,
 .mode.wide {
   --c: var(--yl);
+}
+.mode.wide {
   grid-column: 1 / -1;
+}
+.mode.course {
+  --c: #7aff7a;
+}
+#cSizes button i {
+  display: block;
+  font-size: 11px;
 }
 .pick {
   display: flex;
@@ -786,6 +821,36 @@ h2 {
   font-style: normal;
   font-weight: 500;
   color: var(--dim);
+}
+/* The maps: ten, five to a row. */
+.pick.maps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.pick.maps button {
+  font-size: 13px;
+  padding: 4px 2px;
+}
+@media (max-width: 600px) {
+  .pick.maps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* A map still to earn: dimmed, with the score that opens it underneath. */
+.pick button.locked {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.pick button.locked i {
+  display: block;
+  font-size: 11px;
+}
+.box p.unlock {
+  margin: 12px 0 0;
+  color: var(--yl);
+  font-weight: 700;
+  text-align: center;
 }
 .box p.pickNote {
   font-size: 14px;
@@ -936,8 +1001,7 @@ body.touch .tk {
 /* A phone held sideways (about 375–430 px tall): every menu fits on one
    screen without scrolling. The box takes the width instead of the height:
    the title on one line beside a smaller mascot, the three ways to play side
-   by side, and the intro and key list (the touch controls explain
-   themselves) left out. */
+   by side, and the intro left out. */
 @media (max-height: 520px) {
   .ov {
     padding: calc(8px + var(--st)) calc(12px + var(--sr)) calc(8px + var(--sb))
@@ -951,7 +1015,6 @@ body.touch .tk {
     margin: 6px 0;
     font-size: 15px;
   }
-  .keys,
   #titleBody > p:not(.rot) {
     display: none !important;
   }
@@ -975,7 +1038,7 @@ body.touch .tk {
     gap: 10px;
   }
   #titleBody .modes {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   #titleBody .mode.online {
     grid-column: auto;

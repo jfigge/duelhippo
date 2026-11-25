@@ -354,7 +354,9 @@ export function updPlayer(dt) {
 
   // ── Speed, lift, sink ─────────────────────────────────────────────────────
   // Gravity acts along the nose: dives speed you up, climbs slow you down.
-  P.speed += (P.thr * pt.thr - pt.drag * P.speed * P.speed - G * b.f.y) * dt;
+  P.speed +=
+    (P.thr * pt.thr * land.power - pt.drag * P.speed * P.speed - G * b.f.y) *
+    dt;
   P.speed = clamp(P.speed, 0, 140);
   // A stalled wing in a spin bleeds the speed away, and lifts nothing.
   const spinV = pt.stall * SPIN.speed;
@@ -374,11 +376,21 @@ export function updPlayer(dt) {
 
   // ── Ground contact: land, or crash ────────────────────────────────────────
   // "Home" is this plane's own runway: HOME, or its team's field.
-  const gy = groundY(P.pos.x, P.pos.z) + GEAR,
+  const gy = groundY(P.pos.x, P.pos.z, P.pos.y) + GEAR,
     onHome = onRun(P.pos, P.base),
     onRw =
       onHome ||
       (net.on ? onAnyField(P.pos) : onRun(P.pos, P.base === HOME ? EB : HOME));
+  // Met from below or from the side (a carrier's hull, a tower, a cliff
+  // under a raised runway): a crash, whatever the runway above it. The
+  // Countryside has no such ground: its runways lie on the ground.
+  if (
+    land.height &&
+    !P.grounded &&
+    P.pos.y <= gy &&
+    P.pos.y - P.vel.y * dt < gy - 1
+  )
+    return crash(P.pos, land.crash ? land.crash(P.pos) : "Crashed");
   if (!P.grounded && P.pos.y <= gy) {
     const vs = -P.vel.y,
       along = game.mode === "classic" || Math.abs(b.f.z) < pt.along;
@@ -452,6 +464,7 @@ export function updPlayer(dt) {
   for (const t of targets)
     if (
       P.pos.y < t.y + t.h + 1.5 &&
+      P.pos.y > t.floor &&
       Math.hypot(P.pos.x - t.x, P.pos.z - t.z) < t.r
     )
       return crash(
@@ -466,7 +479,7 @@ export function updPlayer(dt) {
   for (const h of hippos)
     if (
       h.alive &&
-      P.pos.y < 5.5 &&
+      P.pos.y < h.g.position.y + 5.5 &&
       Math.hypot(P.pos.x - h.x, P.pos.z - h.z) < 4.5
     )
       return crash(P.pos, "You hit a hippo. The hippo is fine.");

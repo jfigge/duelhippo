@@ -24,10 +24,10 @@
 // on phones); the reticle and the missile lock's box track every frame.
 
 import { $, clamp, tv, basis } from "./util.js";
-import { GEAR, HOME, EB, LANE, MSL } from "./constants.js";
+import { GEAR, HOME, EB, LANE, MSL, MAPS, UNLOCK } from "./constants.js";
 import { camera } from "./scene.js";
-import { S, game } from "./state.js";
-import { tickMsg } from "./msg.js";
+import { S, game, mapOpen } from "./state.js";
+import { tickMsg, say } from "./msg.js";
 import { groundY, targets, hippos, fields } from "./world.js";
 import { P, PB, aiming, idleAtHome } from "./flight.js";
 import { sfx } from "./audio.js";
@@ -36,6 +36,7 @@ import { enemies } from "./ai.js";
 import { remotes, teamScores } from "./remote.js";
 import { net, isMode, myTeam } from "./net/bus.js";
 import { TEAM } from "./net/teams.js";
+import { run, RINGS, clock } from "./course.js";
 
 let hudT = 0,
   warnT = 0,
@@ -86,6 +87,17 @@ function lockBox() {
   box.firstChild.textContent = locked() ? "LOCK" : Math.floor(k * 100) + "%";
 }
 
+// A one-player game whose score has just earned a map says so, once. (It
+// opens for good when the game ends and the score is recorded.)
+const told = new Set();
+function earned() {
+  for (const id in UNLOCK)
+    if (UNLOCK[id] && S.score > UNLOCK[id] && !mapOpen(id) && !told.has(id)) {
+      told.add(id);
+      say(`New map: ${MAPS[id]}! It opens when this flight ends`, 3);
+    }
+}
+
 export function hud(dt) {
   tickMsg(dt);
   $("hud").classList.toggle("ads", game.state === "play" && aiming());
@@ -100,7 +112,8 @@ export function hud(dt) {
   lockBox();
   if ((hudT -= dt) > 0) return;
   hudT = 0.1;
-  const alt = Math.max(0, P.pos.y - groundY(P.pos.x, P.pos.z) - GEAR);
+  if (!net.on) earned();
+  const alt = Math.max(0, P.pos.y - groundY(P.pos.x, P.pos.z, P.pos.y) - GEAR);
   $("hScore").textContent = S.score;
   $("hLives").textContent = isMode("flag")
     ? S.lives > 0
@@ -117,6 +130,13 @@ export function hud(dt) {
   $("hPlane").textContent = P.pt.name;
   $("hMslRow").classList.toggle("hidden", !P.pt.missiles);
   $("hMsl").textContent = P.msl;
+  // The obstacle course: the ring to fly next, and the clock.
+  $("hCourseRow").classList.toggle("hidden", !run.on);
+  if (run.on) {
+    $("hRing").textContent =
+      `${Math.min(run.next + 1, RINGS.length)}/${RINGS.length}`;
+    $("hTime").textContent = clock(run.t);
+  }
   $("bMsl").classList.toggle("on", locked());
   $("planes").classList.toggle("hidden", !idleAtHome());
   if (net.on) teamPanel();
@@ -194,6 +214,16 @@ function drawRadar() {
     dot(HOME.x, HOME.z, "#55ffff", 14);
     dot(EB.x, EB.z, "#ff55ff", 10);
   }
+  // The obstacle course's next ring, and the one after.
+  if (run.on)
+    for (let i = run.next + 1; i >= run.next; i--)
+      if (RINGS[i])
+        dot(
+          RINGS[i].c.x,
+          RINGS[i].c.z,
+          i === run.next ? "#ffe66b" : "#55ffff",
+          i === run.next ? 12 : 8,
+        );
   for (const t of targets)
     if (t.alive)
       dot(

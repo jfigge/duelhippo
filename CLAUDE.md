@@ -74,14 +74,26 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   tighter landings, homing missiles) run only behind a field the Kite has as
   zero or null. Keep it that way: a Kite game must stay the prototype's.
   Tested in `planes`, `spin` and `missiles`.
-- **Maps** (`maps.js`). The Countryside is the prototype's world and the
-  default; Classic always uses it. The City and the Sea are built on first
-  use from their own seeded generator, never `Math.random`, and plug into
-  `land` in `world.js`: towers and flight decks count as ground in
-  `groundY`, so everything that meets the ground meets them. While the
+- **Maps** (`maps.js`, `maps/*.js`). The Countryside is the prototype's
+  world and the default; Classic and the obstacle course always use it.
+  The other nine are built on first use from their own seeded generator,
+  never `Math.random`, and plug into `land` in `world.js`: towers, decks,
+  mountains and floating islands count as ground in `groundY(x, z, y)` (y
+  is the height asked about, for overhangs), so everything that meets the
+  ground meets them. `land.tick` (weather, flak, moving targets) runs last
+  in `update()`; `land.power` scales thrust. Storm and Night raid reuse the
+  Countryside's own world (`country: true`). While the
   Countryside is up every `land` hook is null (or 1, or the prototype's
   value), so `HOME`, `EB` and the scene are the prototype's. A team game's
-  map is the organiser's (`setup.map`). Tested in `maps.test.js`.
+  map is the organiser's (`setup.map`). Maps are earned by the best
+  one-player score (`UNLOCK` in `constants.js`, `mapOpen` in `state.js`),
+  on the title and for an organiser alike. Tested in `maps.test.js` and
+  `maps-unlock.test.js`.
+- **Obstacle course** (`course.js`). Fifty rings over the Countryside, laid
+  out from a seeded generator, flown in order against the clock, in three
+  ring sizes, each opened by finishing the one before. No enemies, no
+  town, fuel kept full. Its scores go to its own table in localStorage,
+  never to the best score that opens maps. Tested in `course.test.js`.
 - **Enemy turns** (Free flight). In the prototype the flyers never turned:
   `des` in `updEnemy` aliased `tv`, which the turn overwrote with the
   flyer's own heading. The port gives `des` its own vector, and the
@@ -112,7 +124,9 @@ Rules that follow from this:
 `src/web/scripts/` contains these modules:
 
 - `world`: terrain, airfields, town, hippos
-- `maps`: the City and the Sea, and switching between maps
+- `maps`: switching between maps, the City and the Sea, and the kit the
+  others (`maps/*.js`, one module each) are built with
+- `course`: the obstacle course
 - `flight`: the player
 - `ai`: the enemies
 - `weapons`: guns and bombs

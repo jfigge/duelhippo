@@ -141,6 +141,7 @@ export function updBullets(dt) {
           if (
             t.alive &&
             p.y < t.y + t.h &&
+            p.y > t.floor &&
             Math.hypot(p.x - t.x, p.z - t.z) < t.r
           ) {
             hit = true;
@@ -149,7 +150,11 @@ export function updBullets(dt) {
           }
       if (!hit)
         for (const h of hippos)
-          if (h.alive && p.y < 4.5 && Math.hypot(p.x - h.x, p.z - h.z) < 4) {
+          if (
+            h.alive &&
+            p.y < h.g.position.y + 4.5 &&
+            Math.hypot(p.x - h.x, p.z - h.z) < 4
+          ) {
             hit = true;
             scareHippo(h);
             break;
@@ -162,7 +167,7 @@ export function updBullets(dt) {
       puff(P.pos, 0xff55ff, 3, 6, 0.6, 0.3);
       if (P.dmg >= 100) say("Engine hit! Going down…", 2.5);
     }
-    if (!hit && p.y < groundY(p.x, p.z)) {
+    if (!hit && p.y < groundY(p.x, p.z, p.y)) {
       hit = true;
       puff(p, land.dust, 2, 4, 0.8, 0.5, 2);
     }
@@ -216,7 +221,7 @@ export function dropBomb() {
   // in real seconds — so stretched when the game is slowed down.
   const h = Math.max(
       1,
-      b.m.position.y - groundY(b.m.position.x, b.m.position.z),
+      b.m.position.y - groundY(b.m.position.x, b.m.position.z, b.m.position.y),
     ),
     vd = Math.max(0, -b.v.y);
   b.snd = sfx.whistle((-vd + Math.sqrt(vd * vd + 2 * G * h)) / G / opt.speed);
@@ -241,14 +246,29 @@ export function updBombs(dt) {
     b.m.position.addScaledVector(b.v, dt);
     b.m.lookAt(tv.copy(b.m.position).add(b.v));
     const p = b.m.position;
-    if (p.y <= groundY(p.x, p.z) + 0.3) {
+    // A target that floats (an airship) stops a bomb that falls into it.
+    const into = targets.find(
+      (t) =>
+        t.alive &&
+        t.floor > -Infinity &&
+        p.y > t.floor &&
+        p.y < t.y + t.h &&
+        Math.hypot(p.x - t.x, p.z - t.z) < t.r,
+    );
+    if (into || p.y <= groundY(p.x, p.z, p.y) + 0.3) {
       b.on = false;
       b.m.visible = false;
       if (b.snd) b.snd.stop();
       boom(p, true);
       if (b.shown) continue;
       for (const t of targets)
-        if (t.alive && Math.hypot(p.x - t.x, p.z - t.z) < t.r + 12)
+        if (
+          t.alive &&
+          Math.hypot(p.x - t.x, p.z - t.z) < t.r + 12 &&
+          // one that floats, only from a bomb that bursts near it
+          (t.floor === -Infinity ||
+            (p.y > t.floor - 12 && p.y < t.y + t.h + 12))
+        )
           hurtTarget(t, 12, p.clone());
       for (const h of hippos)
         if (h.alive && Math.hypot(p.x - h.x, p.z - h.z) < 14) scareHippo(h);

@@ -35,7 +35,14 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PI } from "./util.js";
 import { CX, HOME, EB, TDEF, SKY, MAPS, CITY, SEA } from "./constants.js";
-import { scene, M, box, put, flat } from "./scene.js";
+import { scene, camera, M, box, put, flat } from "./scene.js";
+import { game } from "./state.js";
+import { say } from "./msg.js";
+import { sfx } from "./audio.js";
+import { puff, boom } from "./effects.js";
+import { P, crash } from "./flight.js";
+import { fire } from "./weapons.js";
+import { MORE } from "./maps/index.js";
 import {
   land,
   countryside,
@@ -45,11 +52,14 @@ import {
   COUNTRY_SOLIDS,
   placeHippos,
   buildTargets,
+  targets,
 } from "./world.js";
 
 // The sky's light from below takes the ground's colour: grass on the
-// Countryside, grey in the City, blue at sea.
-const hemi = scene.children.find((o) => o.isHemisphereLight);
+// Countryside, grey in the City, blue at sea. Night dims both lights.
+const hemi = scene.children.find((o) => o.isHemisphereLight),
+  sun = scene.children.find((o) => o.isDirectionalLight),
+  LIGHT = [hemi.intensity, sun.intensity];
 
 // The Countryside, as the prototype has it: put back when it is picked again.
 const COUNTRY = {
@@ -65,20 +75,37 @@ const COUNTRY = {
   sky: SKY,
   fog: [700, 3400],
   below: hemi.groundColor.getHex(),
+  light: [1, 1],
 };
 
 let current = "field";
 const built = {};
 export const mapNow = () => current;
 
+// A map, as its builder returns it. Anything left out is the Countryside's:
+//   group    its scenery, shown while it is the map in play
+//   country  true: the Countryside's own scenery, ground and town, under
+//            this map's sky (Storm, Night raid)
+//   land     its rules (world.js `land`)
+//   home, enemy, solids, hippos   the two runways, what to fly into, and
+//            where the hippos live ([x, z, y] each)
+//   sky, fog [near, far], below (the ground's light), light [hemisphere,
+//            sun] as shares of the Countryside's
+//   enter(), leave()   anything else to set up and put back
 export function useMap(id) {
   if (!MAPS[id]) id = "field";
   if (id === current) return;
-  if (built[current]) built[current].group.visible = false;
+  if (built[current]) {
+    built[current].group?.removeFromParent();
+    built[current].leave?.();
+  }
   current = id;
-  const m = id === "field" ? COUNTRY : (built[id] ??= BUILD[id]());
-  countryside.visible = id === "field";
-  if (m.group) m.group.visible = true;
+  const m = {
+    ...COUNTRY,
+    ...(id === "field" ? {} : (built[id] ??= BUILD[id](kit))),
+  };
+  countryside.visible = id === "field" || !!m.country;
+  if (m.group) scene.add(m.group);
   Object.assign(land, COUNTRY.land, m.land);
   Object.assign(HOME, m.home);
   Object.assign(EB, m.enemy);
@@ -88,6 +115,9 @@ export function useMap(id) {
   scene.fog.color.setHex(m.sky);
   [scene.fog.near, scene.fog.far] = m.fog;
   hemi.groundColor.setHex(m.below);
+  hemi.intensity = LIGHT[0] * m.light[0];
+  sun.intensity = LIGHT[1] * m.light[1];
+  m.enter?.();
   buildTargets();
 }
 
@@ -130,7 +160,103 @@ function dressing(into) {
   hangar(EB.x + 120, -70, 0xb03aa0, false, into);
 }
 
-const BUILD = { city, sea };
+// Fire an enemy round from `from` at the player, leading them, if they are
+// within `range` (m) and alive and solid: a map's flak. Returns whether it
+// fired. `spread` is the aim's scatter (rad).
+const flakTv = new THREE.Vector3();
+export function flakAt(from, range = 600, spread = 0.03) {
+  if (!P.alive || P.ghost || game.state !== "play") return false;
+  const d = from.distanceTo(P.pos);
+  if (d > range) return false;
+  const v = 480,
+    dir = flakTv
+      .copy(P.pos)
+      .addScaledVector(P.vel, d / v)
+      .sub(from)
+      .normalize();
+  dir.x += (Math.random() - 0.5) * spread * 2;
+  dir.y += (Math.random() - 0.5) * spread * 2;
+  dir.z += (Math.random() - 0.5) * spread * 2;
+  fire(from.clone(), dir.normalize().clone(), v, "e");
+  sfx.egun(camera.position.distanceTo(from));
+  return true;
+}
+
+// What every map's builder is given (maps/*.js): the shared pieces.
+export const kit = {
+  THREE,
+  seeded,
+  decals,
+  avoider,
+  water,
+  carrier,
+  foam,
+  dressing,
+  runway,
+  hangar,
+  flakAt,
+  scene,
+  camera,
+  sfx,
+  M,
+  box,
+  put,
+  flat,
+  COUNTRY,
+  land,
+  targets,
+  crash,
+  CX,
+  P,
+  say,
+  puff,
+  boom,
+};
+
+const BUILD = { city, sea, ...MORE };
+
+// A flyer about to fly into something (a tower, a mountain) turns for the
+// clearest way round it, the one nearest where it was going. Under a
+// ceiling none climbs into the cloud; without one, a flyer also climbs to
+// get over. `to` is where it wants to go (ai.js), changed in place.
+const TURNS = [0.5, -0.5, 1, -1, 1.6, -1.6, 2.4, -2.4];
+function avoider(height, ceil) {
+  const ahead = (pos, dx, dz) => {
+    for (let s = 30; s <= 240; s += 30)
+      if (height(pos.x + dx * s, pos.z + dz * s) > pos.y - 25) return s;
+    return 0;
+  };
+  return (pos, f, to) => {
+    const l = Math.hypot(f.x, f.z) || 1,
+      fx = f.x / l,
+      fz = f.z / l;
+    if (ahead(pos, fx, fz)) {
+      const tl = Math.hypot(to.x, to.z) || 1;
+      let best = null,
+        score = -Infinity;
+      for (const a of TURNS) {
+        const c = Math.cos(a),
+          s = Math.sin(a),
+          dx = fx * c - fz * s,
+          dz = fx * s + fz * c,
+          hit = ahead(pos, dx, dz),
+          v = hit ? hit / 1000 : 1 + (dx * to.x + dz * to.z) / tl;
+        if (v > score) {
+          score = v;
+          best = [dx, dz];
+        }
+      }
+      const L = Math.max(200, tl);
+      to.set(
+        best[0] * L,
+        ceil ? Math.min(to.y, 0) : Math.max(to.y, L * 0.4),
+        best[1] * L,
+      );
+    }
+    if (ceil && pos.y > ceil - 70)
+      to.y = Math.min(to.y, -Math.hypot(to.x, to.z) * 0.15);
+  };
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // The City: a grid of towers, most too tall to clear, under a solid cloud
@@ -146,7 +272,6 @@ function city() {
     rnd = (a, b) => a + rand() * (b - a);
   const { pitch, block, ceil } = CITY;
   const group = new THREE.Group();
-  scene.add(group);
   const home = COUNTRY.home,
     enemy = COUNTRY.enemy;
 
@@ -334,42 +459,9 @@ function city() {
   }
   group.add(puffs);
 
-  // A flyer about to fly into a tower turns for the clearest way round it,
-  // the one nearest where it was going; and none climbs into the cloud.
-  // `to` is where it wants to go (ai.js), changed in place. Streets are
-  // narrow for a plane, so City flyers also turn twice as hard (`agile`).
-  const ahead = (pos, dx, dz, far) => {
-    for (let s = 30; s <= far; s += 30)
-      if (height(pos.x + dx * s, pos.z + dz * s) > pos.y - 25) return s;
-    return 0;
-  };
-  const TURNS = [0.5, -0.5, 1, -1, 1.6, -1.6, 2.4, -2.4];
-  function avoid(pos, f, to) {
-    const l = Math.hypot(f.x, f.z) || 1,
-      fx = f.x / l,
-      fz = f.z / l;
-    if (ahead(pos, fx, fz, 240)) {
-      const tl = Math.hypot(to.x, to.z) || 1;
-      let best = null,
-        score = -Infinity;
-      for (const a of TURNS) {
-        const c = Math.cos(a),
-          s = Math.sin(a),
-          dx = fx * c - fz * s,
-          dz = fx * s + fz * c,
-          hit = ahead(pos, dx, dz, 240),
-          v = hit ? hit / 1000 : 1 + (dx * to.x + dz * to.z) / tl;
-        if (v > score) {
-          score = v;
-          best = [dx, dz];
-        }
-      }
-      const L = Math.max(200, tl);
-      to.set(best[0] * L, Math.min(to.y, 0), best[1] * L);
-    }
-    if (pos.y > ceil - 70)
-      to.y = Math.min(to.y, -Math.hypot(to.x, to.z) * 0.15);
-  }
+  // Streets are narrow for a plane, so City flyers turn twice as hard
+  // (`agile`).
+  const avoid = avoider(height, ceil);
 
   // A team game: room cleared round each team's field (whole blocks of
   // towers put away), a park, its runway and its hangar.
@@ -389,7 +481,6 @@ function city() {
     drawTowers();
   }
 
-  group.visible = false;
   return {
     group,
     towers,
@@ -427,6 +518,93 @@ function city() {
 // is its runway, and the enemy fleet to bomb where the town was. A few
 // islands; hippos wallow off one of them.
 // ════════════════════════════════════════════════════════════════════════════
+// Large islands, each a cluster of peaks ([dx, dz, radius, height]): ridges
+// and mountains to fly over, round and through. They keep clear of the
+// lane the carriers and the fleet lie on, and of the ring the team
+// carriers stand round (net/teams.js RING, 1900 m about CX, give or take a
+// deck): the inner two lie inside it, the rest outside.
+const BIG = [
+  {
+    x: 1400,
+    z: 950,
+    peaks: [
+      [0, 0, 320, 170],
+      [-160, 60, 200, 120],
+      [150, -40, 220, 140],
+    ],
+  },
+  {
+    x: 1450,
+    z: -1000,
+    peaks: [
+      [0, 0, 340, 240],
+      [180, 80, 200, 150],
+      [-200, -60, 220, 110],
+    ],
+  },
+  {
+    x: 1300,
+    z: 2950,
+    peaks: [
+      [0, 0, 450, 320],
+      [-300, 100, 300, 200],
+      [280, -60, 320, 230],
+    ],
+  },
+  {
+    x: 1500,
+    z: -3000,
+    peaks: [
+      [0, 0, 420, 280],
+      [320, 40, 280, 180],
+      [-260, -80, 300, 200],
+    ],
+  },
+  {
+    x: -1300,
+    z: 1700,
+    peaks: [
+      [0, 0, 380, 260],
+      [200, -150, 260, 160],
+    ],
+  },
+  {
+    x: 4200,
+    z: -1700,
+    peaks: [
+      [0, 0, 400, 300],
+      [-150, 220, 260, 180],
+    ],
+  },
+  {
+    x: 4250,
+    z: 1750,
+    peaks: [
+      [0, 0, 360, 220],
+      [160, -180, 240, 150],
+    ],
+  },
+];
+for (const b of BIG)
+  b.reach = Math.max(...b.peaks.map(([dx, dz, r]) => Math.hypot(dx, dz) + r));
+// A big island's ground: the highest of its peaks' smooth cones, less a
+// little, so the coast is a gentle beach; 0 is the sea.
+function bigHeight(b, x, z) {
+  let h = 0;
+  for (const [dx, dz, r, top] of b.peaks) {
+    const f = 1 - Math.hypot(x - b.x - dx, z - b.z - dz) / r;
+    if (f > 0) h = Math.max(h, top * f * f * (3 - 2 * f));
+  }
+  return Math.max(0, h - 2);
+}
+const bigAt = (x, z) =>
+  BIG.find(
+    (b) =>
+      Math.abs(x - b.x) < b.reach &&
+      Math.abs(z - b.z) < b.reach &&
+      bigHeight(b, x, z) > 0,
+  );
+
 const ISLES = [
   [1050, 380, 90],
   [520, -620, 60],
@@ -452,6 +630,33 @@ const HULL = 0x8a919c,
 // The island on the deck's starboard side, as ground: [dx, dz, half-x,
 // half-z, height above the deck].
 const ISLAND = [20, 17, 17, 4.5, 26];
+
+// Open water to the horizon, faceted, each triangle its own shade of blue
+// (from `pal`), gently rolling, its surface just under y = 0.
+export function water(
+  into,
+  rand,
+  pal = [0x2a6fa8, 0x2f78b0, 0x2868a2, 0x3380b8, 0x2c73ab],
+) {
+  const g = new THREE.PlaneGeometry(14000, 14000, 120, 120).toNonIndexed(),
+    p = g.attributes.position;
+  for (let i = 0; i < p.count; i++)
+    p.setZ(i, Math.sin(p.getX(i) * 0.02) * Math.cos(p.getY(i) * 0.017));
+  const cs = pal.map((c) => new THREE.Color(c)),
+    col = new Float32Array(p.count * 3);
+  for (let t = 0; t < p.count / 3; t++) {
+    const c = cs[(rand() * cs.length) | 0];
+    for (let k = 0; k < 3; k++) c.toArray(col, (t * 3 + k) * 3);
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(
+    g,
+    new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+  );
+  m.rotation.x = -PI / 2;
+  return put(into, m, CX, -1.2, 0);
+}
 
 // A carrier, its deck centred on the origin and along x, top at SEA.deck.
 function carrier(trim, roof) {
@@ -561,31 +766,10 @@ function sea() {
   const rand = seeded(1805),
     rnd = (a, b) => a + rand() * (b - a);
   const group = new THREE.Group();
-  scene.add(group);
   const home = { ...COUNTRY.home, hl: SEA.hl, hw: SEA.hw },
     enemy = { ...COUNTRY.enemy, hl: SEA.hl, hw: SEA.hw };
 
-  // Water: faceted, each triangle its own shade of blue, gently rolling.
-  const g = new THREE.PlaneGeometry(14000, 14000, 120, 120).toNonIndexed(),
-    p = g.attributes.position;
-  for (let i = 0; i < p.count; i++)
-    p.setZ(i, Math.sin(p.getX(i) * 0.02) * Math.cos(p.getY(i) * 0.017));
-  const pal = [0x2a6fa8, 0x2f78b0, 0x2868a2, 0x3380b8, 0x2c73ab].map(
-    (c) => new THREE.Color(c),
-  );
-  const col = new Float32Array(p.count * 3);
-  for (let t = 0; t < p.count / 3; t++) {
-    const c = pal[(rand() * pal.length) | 0];
-    for (let k = 0; k < 3; k++) c.toArray(col, (t * 3 + k) * 3);
-  }
-  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  g.computeVertexNormals();
-  const water = new THREE.Mesh(
-    g,
-    new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
-  );
-  water.rotation.x = -PI / 2;
-  put(group, water, CX, -1.2, 0);
+  water(group, rand);
 
   // The carriers: the two sides', and in a team game each team's.
   const decks = [home, enemy];
@@ -639,8 +823,71 @@ function sea() {
     }
   }
 
-  // The ground: a deck (and its island) is solid down to the water; an
-  // island is a sand bar with a hill on it.
+  // The large islands: one faceted mesh each, shaded by height (beach,
+  // grass, rock, and bare rock on the high peaks), wooded on the lower
+  // slopes.
+  const SHADE = [
+    [6, [0xe3cf8f, 0xd9c37f]],
+    [80, [0x5f9a40, 0x6ea648, 0x528a36]],
+    [180, [0x77904a, 0x8a8a6a, 0x7d8a58]],
+    [Infinity, [0x9a9180, 0x8a8478, 0xa8a090]],
+  ];
+  const woods = [];
+  for (const b of BIG) {
+    const size = b.reach * 2 + 40,
+      n = Math.round(size / 24),
+      g = new THREE.PlaneGeometry(size, size, n, n).toNonIndexed(),
+      p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const h = bigHeight(b, b.x + p.getX(i), b.z - p.getY(i));
+      p.setZ(i, h > 0 ? h : -6);
+    }
+    const col = new Float32Array(p.count * 3),
+      c = new THREE.Color();
+    for (let t = 0; t < p.count / 3; t++) {
+      const h = (p.getZ(t * 3) + p.getZ(t * 3 + 1) + p.getZ(t * 3 + 2)) / 3,
+        pal = SHADE.find(([top]) => h < top)[1];
+      c.setHex(pal[(rand() * pal.length) | 0]);
+      for (let k = 0; k < 3; k++) c.toArray(col, (t * 3 + k) * 3);
+    }
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(
+      g,
+      new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+    );
+    m.rotation.x = -PI / 2;
+    put(group, m, b.x, 0, b.z);
+    for (let i = 0; i < 90; i++) {
+      const x = b.x + rnd(-b.reach, b.reach),
+        z = b.z + rnd(-b.reach, b.reach),
+        h = bigHeight(b, x, z);
+      if (h > 8 && h < 110) woods.push([x, h, z, rnd(1.4, 2.6)]);
+    }
+  }
+  const crowns = new THREE.InstancedMesh(
+      new THREE.ConeGeometry(4, 10, 6),
+      M(0x3d7a35),
+      woods.length,
+    ),
+    trunks = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.6, 0.7, 3, 5),
+      M(0x6b4a2a),
+      woods.length,
+    ),
+    mx = new THREE.Matrix4(),
+    at = new THREE.Vector3(),
+    q = new THREE.Quaternion(),
+    sc = new THREE.Vector3();
+  woods.forEach(([x, y, z, s], i) => {
+    sc.set(s, s, s);
+    crowns.setMatrixAt(i, mx.compose(at.set(x, y + 8 * s, z), q, sc));
+    trunks.setMatrixAt(i, mx.compose(at.set(x, y + 1.5 * s, z), q, sc));
+  });
+  group.add(crowns, trunks);
+
+  // The ground: a deck (and its island) is solid down to the water; a small
+  // island is a sand bar with a hill on it; a large one, its peaks.
   function onDeck(x, z) {
     for (const d of decks)
       if (Math.abs(x - d.x) < SEA.hl && Math.abs(z - d.z) < SEA.hw) return d;
@@ -657,7 +904,10 @@ function sea() {
         : SEA.deck;
     }
     const i = isle(x, z);
-    if (!i) return 0;
+    if (!i) {
+      const b = bigAt(x, z);
+      return b ? bigHeight(b, x, z) : 0;
+    }
     const [ix, iz, r] = i,
       e = Math.hypot(x - ix, z - iz);
     return e > r * 0.6
@@ -666,7 +916,7 @@ function sea() {
   }
   function crash(p) {
     if (onDeck(p.x, p.z)) return "Flew into the carrier";
-    if (isle(p.x, p.z)) return "Flew into an island";
+    if (isle(p.x, p.z) || bigAt(p.x, p.z)) return "Flew into an island";
     return "Ditched in the sea";
   }
 
@@ -679,13 +929,13 @@ function sea() {
     return [];
   }
 
-  group.visible = false;
   return {
     group,
     land: {
       height,
       floor: () => 0,
       crash,
+      avoid: avoider(height, 0),
       brake: SEA.brake,
       deck: true,
       dust: FOAM,

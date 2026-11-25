@@ -17,7 +17,7 @@
  * with Duel Hippo. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// missiles.test.js — homing missiles: a lock earned by five seconds down the
+// missiles.test.js — homing missiles: a lock earned by three seconds down the
 // sights, a launch, a kill, and a missile beaten by a break turn. Port only;
 // the prototype has no missiles.
 
@@ -86,11 +86,11 @@ test("the Kite carries no missiles, and never locks", () => {
   assert.equal(missiles.filter((m) => m.on).length, 0);
 });
 
-test("five seconds down the sights make a lock; R then kills", () => {
+test("three seconds down the sights make a lock; R then kills", () => {
   airborne("free", 2); // the Lancer: four missiles
   const e = flyerAhead(950);
   game.down("ShiftLeft");
-  game.run(4000);
+  game.run(2000);
   assert.ok(lock.tgt === e, "building on the flyer");
   assert.ok(!locked());
   assert.match($("lock").textContent, /%/);
@@ -115,8 +115,8 @@ test("taking the sights off the target starts the lock again", () => {
   airborne("free", 2);
   flyerAhead(950);
   game.down("ShiftLeft");
-  game.run(3000);
-  assert.ok(lock.t > 2.5);
+  game.run(2000);
+  assert.ok(lock.t > 1.5);
   game.up("ShiftLeft");
   game.run(500);
   assert.equal(lock.t, 0, "more than a moment off it");

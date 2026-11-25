@@ -58,8 +58,45 @@ export const BEST_KEY = "duelhippo.best";
 // the others are built by maps.js, for Free flight and team games (Classic
 // is always the Countryside). Picked on the title screen, or by the
 // organiser of a team game.
-export const MAPS = { field: "Countryside", city: "City", sea: "Sea" };
+export const MAPS = {
+  field: "Countryside",
+  sky: "Sky islands",
+  arctic: "Arctic",
+  canyon: "Canyon",
+  zeppelin: "Zeppelins",
+  sea: "Sea",
+  night: "Night raid",
+  volcano: "Volcano",
+  storm: "Storm",
+  city: "City",
+};
 export const MAP_KEY = "duelhippo.map";
+
+// Maps are earned: each opens once the best one-player score (any mode) is
+// more than its number, 1,000 more than the one before. The Countryside is
+// always open. The order is a random draw, to be ranked after playing.
+export const UNLOCK = Object.fromEntries(
+  Object.keys(MAPS).map((id, i) => [id, i * 1000]),
+);
+
+// ── The obstacle course ─────────────────────────────────────────────────────
+// Not part of the prototype. `rings` rings over the Countryside, the same
+// course every time, flown in order against the clock. Three sizes (`r`,
+// the hole's radius in m); a smaller ring scores more per ring (`pts`), and
+// finishing the course at one size opens the next. Finishing adds a time
+// bonus: `bonus` points a second under `par` seconds, times the size's
+// `pts` / 100.
+export const COURSE = {
+  rings: 50,
+  sizes: [
+    { name: "Large", r: 18, pts: 100 },
+    { name: "Medium", r: 12, pts: 200 },
+    { name: "Small", r: 7, pts: 300 },
+  ],
+  par: 480,
+  bonus: 10,
+};
+export const COURSE_KEY = "duelhippo.course";
 
 // The City: a grid of blocks `pitch` m apart, each `block` m square (so the
 // streets are 90 m wide), its towers up to 460 m tall under a solid cloud
@@ -264,7 +301,7 @@ export const SPIN = {
 // only within `seeker` (rad) of its nose, flies `life` s and goes off within
 // `fuse` m, for `dmg` damage. Service loads one every `rearm` s.
 export const MSL = {
-  lock: 5,
+  lock: 3,
   cone: 0.0524, // 3°
   range: 1000,
   grace: 0.3,

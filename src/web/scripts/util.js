@@ -28,6 +28,8 @@
 // set would be tidier and would quietly change behaviour.
 
 import * as THREE from "three";
+import { MAPS, UNLOCK } from "./constants.js";
+import { mapOpen } from "./state.js";
 
 export const V = THREE.Vector3;
 export const Q = THREE.Quaternion;
@@ -97,3 +99,33 @@ export const segD2 = (a, b, p) => {
   const t = l ? clamp(tv2.copy(p).sub(a).dot(tv) / l, 0, 1) : 0;
   return tv.multiplyScalar(t).add(a).distanceToSquared(p);
 };
+
+// A button for each map, in the order they open, into `box`: `key` names
+// the data attribute (data-map, data-lmap) that says which.
+export function mapButtons(box, key) {
+  box.replaceChildren(
+    ...Object.keys(MAPS).map((id) => {
+      const b = document.createElement("button");
+      b.dataset[key] = id;
+      b.textContent = MAPS[id];
+      return b;
+    }),
+  );
+}
+
+// A map's button (the title's, or the lobby's): its name, and while it is
+// still to earn, the score that opens it.
+export function mapButton(b, id, picked) {
+  const open = mapOpen(id),
+    name = document.createElement("b");
+  name.textContent = MAPS[id];
+  if (open) b.replaceChildren(name);
+  else {
+    const need = document.createElement("i");
+    need.textContent = `Score over ${UNLOCK[id].toLocaleString("en")}`;
+    b.replaceChildren(name, need);
+  }
+  b.classList.toggle("on", id === picked);
+  b.classList.toggle("locked", !open);
+  b.disabled = !open;
+}

@@ -35,6 +35,9 @@ const { land, groundY } = await import("../world.js");
 const { mapNow, useMap } = await import("../maps.js");
 const { HOME, GEAR, CITY, SEA } = await import("../constants.js");
 const msg = () => $("msg").textContent;
+// Every map earned (they open with the best score: maps-unlock.test.js).
+duel.S.best = 1e6;
+(await import("../game.js")).showMaps();
 const pick = (id) => w.document.querySelector(`[data-map="${id}"]`).click();
 
 // Airborne at `pos`, level, nose along +x (yaw −90°), at `speed`.

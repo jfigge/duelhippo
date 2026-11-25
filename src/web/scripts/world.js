@@ -64,7 +64,13 @@ export const land = {
   dust: 0xb9a47c,
   avoid: null,
   agile: 1,
-  // The town's buildings (or the fleet): [kind, x] or [kind, x, side, z].
+  // Called once a frame, after everything else moves (game.js update): a
+  // map's weather, flak and moving targets.
+  tick: null,
+  // The engine's thrust, as a share of the plane's own (volcanic ash).
+  power: 1,
+  // The town's buildings (or the fleet): [kind, x], or [kind, x, side, z],
+  // or [kind, x, side, z, y] for one that floats.
   town: TDEF,
   // Kinds of target the other maps add (ships): kind → (group) → stats.
   kinds: {},
@@ -76,8 +82,11 @@ export const land = {
   flagAt: null,
 };
 
-export function groundY(x, z) {
-  if (land.height) return land.height(x, z);
+// `y` is the height asked about, for ground with something under it (an
+// arch, a floating island, an airship's deck): what is overhead is not
+// ground. Left out, it is the top.
+export function groundY(x, z, y = Infinity) {
+  if (land.height) return land.height(x, z, y);
   const d = Math.max(Math.abs(x - CX), Math.abs(z));
   return d <= FLAT
     ? 0
@@ -435,7 +444,7 @@ export function blob() {
   return m;
 }
 export function syncShadow(sh, pos, on) {
-  const gy = groundY(pos.x, pos.z),
+  const gy = groundY(pos.x, pos.z, pos.y),
     alt = pos.y - gy;
   sh.visible = on && alt < 300;
   sh.position.set(pos.x, gy + 0.2, pos.z);
@@ -445,7 +454,7 @@ export function syncShadow(sh, pos, on) {
 
 // ── The enemy town ──────────────────────────────────────────────────────────
 export const targets = [];
-function makeTarget(kind, x, side, z = 0) {
+function makeTarget(kind, x, side, z = 0, y = groundY(x, z)) {
   const g = new THREE.Group();
   let r, h, hp, pts, name;
   if (kind === "flag") {
@@ -509,8 +518,8 @@ function makeTarget(kind, x, side, z = 0) {
     pts = 250;
     name = "Headquarters";
   }
-  // It stands on the ground: a flight deck, for a flag at sea.
-  const y = groundY(x, z);
+  // It stands on the ground (a flight deck, for a flag at sea), unless its
+  // map floats it (an airship): then there is room under it too.
   g.position.set(x, y, z);
   scene.add(g);
   return {
@@ -519,6 +528,7 @@ function makeTarget(kind, x, side, z = 0) {
     name,
     x,
     y,
+    floor: y > 0 ? y - 2 : -Infinity,
     z,
     r,
     h,
@@ -535,7 +545,7 @@ function makeTarget(kind, x, side, z = 0) {
 export function buildTargets(defs = land.town) {
   for (const t of targets) scene.remove(t.g);
   targets.length = 0;
-  for (const d of defs) targets.push(makeTarget(d[0], d[1], d[2], d[3]));
+  for (const d of defs) targets.push(makeTarget(d[0], d[1], d[2], d[3], d[4]));
 }
 function wreck(t) {
   t.alive = false;
@@ -686,7 +696,7 @@ export function updTown(dt) {
   for (const t of targets)
     if (t.alive && t.kind === "factory" && (t.smokeT -= dt) <= 0) {
       t.smokeT = 0.35;
-      puff(tv2.set(t.x + 8, t.y + 28, -4), 0x8a8a8a, 1, 1.5, 2, 4, 4);
+      puff(tv2.set(t.x + 8, t.y + 28, t.z - 4), 0x8a8a8a, 1, 1.5, 2, 4, 4);
     }
 }
 

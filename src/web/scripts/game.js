@@ -27,7 +27,7 @@
 // matters: later steps read what earlier ones wrote this frame.
 
 import * as THREE from "three";
-import { $, setLabel } from "./util.js";
+import { $, setLabel, mapButton, mapButtons } from "./util.js";
 import {
   BEST_KEY,
   INVERT_KEY,
@@ -35,9 +35,10 @@ import {
   SPEED_KEY,
   MAPS,
   MAP_KEY,
+  COURSE,
 } from "./constants.js";
 import { scene, camera } from "./scene.js";
-import { S, game, opt } from "./state.js";
+import { S, game, opt, mapOpen } from "./state.js";
 import { sfx } from "./audio.js";
 import { updParticles } from "./effects.js";
 import { say } from "./msg.js";
@@ -50,6 +51,7 @@ import {
   updHippos,
   buildFields,
   clearFields,
+  land,
   flagDefs,
   fields,
 } from "./world.js";
@@ -79,6 +81,17 @@ import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
 import { TEAM, MODES } from "./net/teams.js";
 import { PLANES } from "./constants.js";
 import { useMap } from "./maps.js";
+import {
+  run,
+  startCourse,
+  endCourse,
+  updCourse,
+  recordCourse,
+  courseBest,
+  sizeOpen,
+  clock,
+} from "./course.js";
+import { player } from "./scores.js";
 import { initLobby, matchEnded, rematch, leave } from "./net/lobby.js";
 import { initScoreboard, soloOver, renderGroup } from "./scoreboard.js";
 
@@ -103,7 +116,7 @@ function update(dt) {
   // The AI flyers: a one-player game's. In Endless enemies each machine
   // flies one, and draws the others' (net/match.js); the other team games
   // have none.
-  if (!net.on) {
+  if (!net.on && !run.on) {
     const maxE = Math.min(5, 2 + Math.floor(S.kills / 4) + S.wave);
     S.spawnT -= dt;
     if (S.spawnT <= 0 && enemies.filter((e) => e.alive).length < maxE) {
@@ -126,6 +139,10 @@ function update(dt) {
   updTown(dt);
   updHippos(dt);
   updParticles(dt);
+  // A map's weather, flak and moving targets; none on the Countryside.
+  if (land.tick) land.tick(dt);
+  // The obstacle course: the clock, and the rings flown.
+  if (run.on && updCourse(dt)) courseOver(true);
 }
 
 // ── Game flow ───────────────────────────────────────────────────────────────
@@ -142,10 +159,13 @@ function stepPlane(d, quiet = false) {
 }
 
 export function startGame(m) {
+  // The obstacle course is Free flight over the Countryside, with rings.
+  const course = m === "course";
+  if (course) m = "free";
   game.mode = m;
-  // The map: a match's, else the player's; Classic is always the
-  // Countryside, the prototype's.
-  useMap(net.on ? net.map : m === "classic" ? "field" : opt.map);
+  // The map: a match's, else the player's; Classic (and the course) is
+  // always the Countryside, the prototype's.
+  useMap(net.on ? net.map : m === "classic" || course ? "field" : opt.map);
   sfx.init();
   sfx.resume();
   document.body.dataset.mode = game.mode;
@@ -181,28 +201,40 @@ export function startGame(m) {
   // A team game's targets: the town for Endless enemies, the flags for Bomb
   // the flag, nothing for a dogfight.
   buildTargets(
-    !net.on || isMode("endless") ? undefined : isMode("flag") ? flagDefs() : [],
+    course
+      ? []
+      : !net.on || isMode("endless")
+        ? undefined
+        : isMode("flag")
+          ? flagDefs()
+          : [],
   );
   resetPlayer();
+  if (course) startCourse(courseSize);
+  else endCourse();
   game.camZoom = 0;
   camera.position.set(P.pos.x, 20, 90);
   game.state = "play";
   setPause(false);
-  for (const id of ["title", "over"]) $(id).classList.add("hidden");
+  for (const id of ["title", "over", "controls", "course"])
+    $(id).classList.add("hidden");
   $("hud").classList.remove("off");
   $("touchui").classList.toggle("hidden", !isTouch);
   say(
     net.on
       ? INTRO[net.mode]
-      : isTouch
-        ? "Push the throttle up, then pull back on the stick to lift off"
-        : "W to throttle up, then Down arrow to lift off",
+      : course
+        ? "Take off and fly through the yellow ring. The clock starts there"
+        : isTouch
+          ? "Push the throttle up, then pull back on the stick to lift off"
+          : "W to throttle up, then Down arrow to lift off",
     4.5,
   );
   if (renderer) renderer.domElement.focus();
 }
 
 function gameOver() {
+  if (run.on) return courseOver(false);
   overScreen(false);
   game.state = "over";
   P.obj.visible = false;
@@ -212,8 +244,107 @@ function gameOver() {
   $("touchui").classList.add("hidden");
 }
 
+// ── The obstacle course ─────────────────────────────────────────────────────
+// The size picked on the course screen (constants.js COURSE.sizes).
+let courseSize = 0;
+
+// The course's screen, from the title: the sizes (each opens when the one
+// before is finished), the course's own table, and Fly.
+function openCourse() {
+  if (!sizeOpen(courseSize)) courseSize = 0;
+  $("cSizes").replaceChildren(
+    ...COURSE.sizes.map((z, i) => {
+      const b = document.createElement("button"),
+        name = document.createElement("b");
+      name.textContent = `${z.name} rings`;
+      const note = document.createElement("i");
+      note.textContent = sizeOpen(i)
+        ? `${z.pts} a ring`
+        : `Finish ${COURSE.sizes[i - 1].name} first`;
+      b.append(name, note);
+      b.disabled = !sizeOpen(i);
+      b.classList.toggle("locked", !sizeOpen(i));
+      b.classList.toggle("on", i === courseSize);
+      b.addEventListener("click", () => {
+        courseSize = i;
+        openCourse();
+      });
+      return b;
+    }),
+  );
+  courseTable($("cBoard"), -1);
+  $("title").classList.add("hidden");
+  $("course").classList.remove("hidden");
+}
+
+// The course's table into `list`, `mine` (a rank) picked out.
+function courseTable(list, mine) {
+  const best = courseBest();
+  if (!best.length) {
+    const li = document.createElement("li");
+    li.className = "gap";
+    li.textContent = "No scores yet. Fly it!";
+    list.replaceChildren(li);
+    return;
+  }
+  list.replaceChildren(
+    ...best.map((e, i) => {
+      const li = document.createElement("li");
+      if (i === mine) li.className = "mine";
+      const cell = (tag, cls, text) => {
+        const c = document.createElement(tag);
+        c.className = cls;
+        c.textContent = text;
+        return c;
+      };
+      li.append(
+        cell("span", "rk", i + 1),
+        cell("span", "nm", e.n),
+        cell(
+          "i",
+          "",
+          COURSE.sizes[e.z].name +
+            (e.t === null ? " · unfinished" : ` · ${clock(e.t)}`),
+        ),
+        cell("b", "", e.s.toLocaleString("en")),
+      );
+      return li;
+    }),
+  );
+}
+
+// The course is over: finished (`done`) or out of planes. Its own score
+// sheet, table and any size it opened; nothing goes to the best score.
+function courseOver(done) {
+  game.state = "over";
+  P.obj.visible = false;
+  const { rank, opened } = recordCourse(player().n);
+  overScreen(false);
+  $("oTitle").textContent = done ? "Course complete!" : "Out of planes";
+  $("oScore").textContent = run.score.toLocaleString("en");
+  $("oSecond").textContent = "Rings";
+  $("oKills").textContent = `${run.next}/${COURSE.rings}`;
+  $("oThird").textContent = done ? "Time" : "Size";
+  $("oBest").textContent = done ? clock(run.t) : COURSE.sizes[run.size].name;
+  $("oUnlock").textContent = opened
+    ? `Next: ${opened} rings, at more points a ring!`
+    : done && run.bonus
+      ? `Time bonus +${run.bonus.toLocaleString("en")}`
+      : "";
+  $("oUnlock").classList.toggle("hidden", !$("oUnlock").textContent);
+  courseTable($("oCourse"), rank);
+  $("oCourse").classList.remove("hidden");
+  $("oCourseAgain").classList.remove("hidden");
+  $("oSolo").classList.add("hidden");
+  endCourse();
+  $("over").classList.remove("hidden");
+  $("hud").classList.add("off");
+  $("touchui").classList.add("hidden");
+}
+
 // The flight's score: the best score, the game-over figures and the board.
 function recordScore() {
+  const shut = Object.keys(MAPS).filter((id) => !mapOpen(id));
   if (S.score > S.best) {
     S.best = S.score;
     try {
@@ -225,6 +356,13 @@ function recordScore() {
   $("oScore").textContent = S.score;
   $("oKills").textContent = S.kills;
   $("best").textContent = $("oBest").textContent = S.best;
+  // A map this game has earned.
+  const won = shut.filter(mapOpen).map((id) => MAPS[id]);
+  $("oUnlock").textContent = won.length
+    ? `New map: ${won.join(" and ")}! Pick it on the title screen.`
+    : "";
+  $("oUnlock").classList.toggle("hidden", !won.length);
+  showMaps();
   soloOver(S.score, game.mode, planeOfGame());
 }
 
@@ -241,7 +379,7 @@ function planeOfGame() {
 function toMenu() {
   if (net.on) return leave();
   setPause(false);
-  if (game.state === "play") recordScore();
+  if (game.state === "play" && !run.on) recordScore();
   toTitle();
 }
 
@@ -343,6 +481,10 @@ function showGroup(board, fresh) {
 // The over card serves both: one player's best score, or a match result.
 function overScreen(match) {
   $("overMp").classList.toggle("hidden", !match);
+  $("oSecond").textContent = "Kills";
+  $("oCourse").classList.add("hidden");
+  $("oCourseAgain").classList.add("hidden");
+  if (match) $("oUnlock").classList.add("hidden");
   $("overModes").classList.toggle("hidden", match);
   $("oGroup").classList.add("hidden");
   if (match) $("oSolo").classList.add("hidden");
@@ -365,6 +507,7 @@ function toTitle() {
   ownSpeed = null;
   clearRemotes();
   clearFields();
+  endCourse();
   useMap(opt.map);
   P.ghost = false;
   wear(-1);
@@ -401,7 +544,7 @@ function toTitle() {
 // The map for Free flight (and the organiser's first offer in a team game),
 // remembered. The title screen shows it behind the menu straight away.
 function setMap(id, persist = true) {
-  if (!MAPS[id]) return;
+  if (!MAPS[id] || !mapOpen(id)) return;
   opt.map = id;
   if (persist)
     try {
@@ -409,9 +552,15 @@ function setMap(id, persist = true) {
     } catch {
       // No storage: the choice lasts the session.
     }
-  for (const b of document.querySelectorAll("[data-map]"))
-    b.classList.toggle("on", b.dataset.map === id);
+  showMaps();
   if (game.state === "title") useMap(id);
+}
+
+// The title's map buttons: the one picked, and those still to earn, with
+// the score that opens them.
+export function showMaps() {
+  for (const b of document.querySelectorAll("[data-map]"))
+    mapButton(b, b.dataset.map, opt.map);
 }
 
 // ── Game speed ──────────────────────────────────────────────────────────────
@@ -502,6 +651,23 @@ function initUI() {
     gameOver();
   });
   for (const id of ["menu", "oMenu"]) $(id).addEventListener("click", toMenu);
+  // The obstacle course: its screen, and Fly.
+  $("bCourse").addEventListener("click", openCourse);
+  $("cBack").addEventListener("click", () => {
+    $("course").classList.add("hidden");
+    $("title").classList.remove("hidden");
+  });
+  for (const id of ["cFly", "oCourseAgain"])
+    $(id).addEventListener("click", () => startGame("course"));
+  // The controls: a screen of their own, off the title.
+  $("bControls").addEventListener("click", () => {
+    $("title").classList.add("hidden");
+    $("controls").classList.remove("hidden");
+  });
+  $("ctBack").addEventListener("click", () => {
+    $("controls").classList.add("hidden");
+    $("title").classList.remove("hidden");
+  });
   $("oAgain").addEventListener("click", rematch);
   // The runway's plane picker: ‹ and › step through the types.
   $("pPrev").addEventListener("click", () => stepPlane(-1));
@@ -513,6 +679,7 @@ function initUI() {
     speed: () => opt.speed,
     map: () => opt.map,
   });
+  mapButtons($("maps"), "map");
   for (const b of document.querySelectorAll("[data-map]"))
     b.addEventListener("click", () => setMap(b.dataset.map));
   setMap(opt.map, false);
