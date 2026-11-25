@@ -53,29 +53,6 @@ name: Release
 #
 # Windows and Linux installers are unsigned.
 on:
-#
-#   git tag v0.1.0 && git push origin v0.1.0
-#
-# Each platform's installers are built on its own runner and attached to a
-# GitHub Release. hippoherd.com/duelhippo/about/ reads that release (its
-# scripts/build-versions.mjs runs on every deploy, and daily at 07:15 UTC), so
-# its download buttons pick up the new installers on their own.
-#
-# `workflow_dispatch` builds the installers without publishing, to smoke-test
-# packaging from the Actions tab.
-#
-# Signing is driven by repository secrets, the same names Rest Hippo's and
-# Chip Hippo's workflows use, so the herd's certificates work as they are.
-# With none set, everything still builds, unsigned:
-#
-#   CSC_LINK, CSC_KEY_PASSWORD     the Developer ID Application .p12 (base64)
-#                                  and its password: signs the macOS app
-#   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
-#                                  notarization, which Gatekeeper needs as
-#                                  well as the signature
-#
-# Windows and Linux builds are unsigned.
-on:
   push:
     tags:
       - "v*"
@@ -309,8 +286,12 @@ jobs:
       # often newer than the runner image's default Xcode.
       - name: Use the newest Xcode on the runner
         run: |
-          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -v beta | sort -V | tail -1)
-          [ -n "$newest" ] && sudo xcode-select -s "$newest"
+          newest=""
+          for x in /Applications/Xcode_*.app; do
+            case "$x" in *beta*|*"*"*) continue ;; esac
+            newest=$(printf '%s\n%s\n' "$newest" "$x" | sort -V | tail -1)
+          done
+          if [ -n "$newest" ]; then sudo xcode-select -s "$newest"; fi
           xcodebuild -version
 
       # npm ci first, so make finds node_modules up to date and does not run
@@ -348,6 +329,9 @@ jobs:
           security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           rm -f "$RUNNER_TEMP/dist.p12"
           security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC" > /dev/null
+          # Added to the search list, ahead of the ones already there (their
+          # paths have no spaces; word splitting is what is wanted).
+          # shellcheck disable=SC2046
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
 
       - name: Build number

@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: src/server/package-lock.json
 
       - name: Test
-        run: node --test tests/
+        run: node --test "tests/*.test.mjs"
 
       - name: Deploy
         env:

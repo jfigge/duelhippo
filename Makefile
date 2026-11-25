@@ -351,7 +351,7 @@ server: server-install
 	cd "$(SERVER_DIR)" && "$(WRANGLER)" dev --ip 0.0.0.0 --port $(SERVER_PORT)
 
 server-deploy: server-install
-	cd "$(SERVER_DIR)" && node --test tests/ && "$(WRANGLER)" deploy
+	cd "$(SERVER_DIR)" && node --test "tests/*.test.mjs" && "$(WRANGLER)" deploy
 	@echo "Set NET_URL=wss://<the workers.dev address above> in dev.env and as the"
 	@echo "repository variable NET_URL, so builds can find the server."
 
