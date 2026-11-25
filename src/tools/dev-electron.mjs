@@ -24,7 +24,8 @@
 //     they load, so a full reload is the honest refresh).
 //   * Electron loads the page from Vite (--dev-url) with the main-process
 //     inspector on INSPECT (default 9229) for VS Code's "Attach" or
-//     chrome://inspect, and DevTools when DEVTOOLS=1.
+//     chrome://inspect, DevTools when DEVTOOLS=1, and every map and course
+//     level open when UNLOCK=1.
 //   * An edit under app/ restarts Electron, since the main process and the
 //     preload cannot be hot-swapped.
 //   * Quitting Electron (⌘Q, closing the window) or Ctrl-C stops both.
@@ -43,6 +44,9 @@ const electron = createRequire(import.meta.url)("electron"); // the binary's pat
 const PORT = Number(process.env.DEV_PORT) || 5173;
 const INSPECT = process.env.INSPECT || "9229";
 const DEVTOOLS = process.env.DEVTOOLS === "1";
+// UNLOCK=1: the page opens with ?unlock, which a dev build reads as "every
+// map and course level open" (web/scripts/state.js).
+const UNLOCK = process.env.UNLOCK === "1";
 const USER_DATA = process.env.USER_DATA_DIR || path.join(SRC, "..", "data");
 
 const server = await createServer({
@@ -60,7 +64,7 @@ function launch() {
   const argv = [
     `--inspect=${INSPECT}`,
     path.join(APP, "main.js"),
-    `--dev-url=${url}`,
+    `--dev-url=${url}${UNLOCK ? "?unlock" : ""}`,
     `--user-data-dir=${USER_DATA}`,
   ];
   if (DEVTOOLS) argv.push("--devtools");

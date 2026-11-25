@@ -90,8 +90,9 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   on the title and for an organiser alike. Tested in `maps.test.js` and
   `maps-unlock.test.js`.
 - **Obstacle course** (`course.js`). Fifty rings over the Countryside, laid
-  out from a seeded generator, flown in order against the clock, in three
-  ring sizes, each opened by finishing the one before. No enemies, no
+  out from a seeded generator, flown in order against the clock, at three
+  levels (each its own course, the rings closer and the turns tighter),
+  each opened by finishing the one before. No enemies, no
   town, fuel kept full. Its scores go to its own table in localStorage,
   never to the best score that opens maps. Tested in `course.test.js`.
 - **Enemy turns** (Free flight). In the prototype the flyers never turned:

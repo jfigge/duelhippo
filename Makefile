@@ -31,6 +31,9 @@ WEB_PORT ?= 5173
 WEB_HOST ?= localhost
 INSPECT  ?= 9229
 DEVTOOLS ?= 0
+# UNLOCK=1 (make debug, make web): every map and course level open, to test
+# them without earning them. Dev server only; a built game ignores it.
+UNLOCK   ?= 0
 IOS_SIM  ?= iPhone 17 Pro
 DEVICE   ?=
 PHONE    ?=
@@ -92,9 +95,11 @@ help:
 	@echo "  Run:"
 	@echo "    debug         Electron on the Vite dev server: web edits hot-reload,"
 	@echo "                  src/app edits restart the shell; inspector on INSPECT"
-	@echo "                  ($(INSPECT)); DEVTOOLS=1 opens DevTools"
+	@echo "                  ($(INSPECT)); DEVTOOLS=1 opens DevTools; UNLOCK=1 opens"
+	@echo "                  every map and course level, for testing"
 	@echo "    web           The browser on the Vite dev server (WEB_PORT=$(WEB_PORT));"
-	@echo "                  WEB_HOST=0.0.0.0 to play from a phone on the LAN"
+	@echo "                  WEB_HOST=0.0.0.0 to play from a phone on the LAN;"
+	@echo "                  UNLOCK=1 as for debug"
 	@echo "    ios           Build and launch in the iOS Simulator (IOS_SIM=\"$(IOS_SIM)\")"
 	@echo "                  or on a phone (DEVICE=<udid>)"
 	@echo "    ios-phone     ios on PHONE ($(PHONE))"
@@ -157,12 +162,13 @@ install: $(SRC_DIR)/node_modules
 # ─── Run ──────────────────────────────────────────────────────────────────────
 debug: install
 	@cd "$(SRC_DIR)" && DEV_PORT=$(WEB_PORT) INSPECT=$(INSPECT) DEVTOOLS=$(DEVTOOLS) \
+		UNLOCK=$(UNLOCK) \
 		VITE_NET_URL="$(NET_URL)" \
 		USER_DATA_DIR="$(DATA_DIR)" node tools/dev-electron.mjs
 
 web: install
 	@cd "$(SRC_DIR)" && WEB_PORT=$(WEB_PORT) VITE_NET_URL="$(NET_URL)" \
-		"$(BIN)/vite" --host $(WEB_HOST) --open
+		"$(BIN)/vite" --host $(WEB_HOST) --open $(if $(filter 1,$(UNLOCK)),"/?unlock","/")
 
 # ─── Build ────────────────────────────────────────────────────────────────────
 web-build: install

@@ -38,7 +38,7 @@ import {
   COURSE,
 } from "./constants.js";
 import { scene, camera } from "./scene.js";
-import { S, game, opt, mapOpen } from "./state.js";
+import { S, game, opt, mapOpen, unlockAll } from "./state.js";
 import { sfx } from "./audio.js";
 import { updParticles } from "./effects.js";
 import { say } from "./msg.js";
@@ -88,7 +88,7 @@ import {
   updCourse,
   recordCourse,
   courseBest,
-  sizeOpen,
+  levelOpen,
   clock,
 } from "./course.js";
 import { player } from "./scores.js";
@@ -245,25 +245,25 @@ function gameOver() {
 }
 
 // ── The obstacle course ─────────────────────────────────────────────────────
-// The size picked on the course screen (constants.js COURSE.sizes).
+// The level picked on the course screen (constants.js COURSE.levels).
 let courseSize = 0;
 
-// The course's screen, from the title: the sizes (each opens when the one
+// The course's screen, from the title: the levels (each opens when the one
 // before is finished), the course's own table, and Fly.
 function openCourse() {
-  if (!sizeOpen(courseSize)) courseSize = 0;
+  if (!levelOpen(courseSize)) courseSize = 0;
   $("cSizes").replaceChildren(
-    ...COURSE.sizes.map((z, i) => {
+    ...COURSE.levels.map((z, i) => {
       const b = document.createElement("button"),
         name = document.createElement("b");
-      name.textContent = `${z.name} rings`;
+      name.textContent = z.name;
       const note = document.createElement("i");
-      note.textContent = sizeOpen(i)
+      note.textContent = levelOpen(i)
         ? `${z.pts} a ring`
-        : `Finish ${COURSE.sizes[i - 1].name} first`;
+        : `Finish ${COURSE.levels[i - 1].name} first`;
       b.append(name, note);
-      b.disabled = !sizeOpen(i);
-      b.classList.toggle("locked", !sizeOpen(i));
+      b.disabled = !levelOpen(i);
+      b.classList.toggle("locked", !levelOpen(i));
       b.classList.toggle("on", i === courseSize);
       b.addEventListener("click", () => {
         courseSize = i;
@@ -303,7 +303,7 @@ function courseTable(list, mine) {
         cell(
           "i",
           "",
-          COURSE.sizes[e.z].name +
+          COURSE.levels[e.z].name +
             (e.t === null ? " · unfinished" : ` · ${clock(e.t)}`),
         ),
         cell("b", "", e.s.toLocaleString("en")),
@@ -314,7 +314,7 @@ function courseTable(list, mine) {
 }
 
 // The course is over: finished (`done`) or out of planes. Its own score
-// sheet, table and any size it opened; nothing goes to the best score.
+// sheet, table and any level it opened; nothing goes to the best score.
 function courseOver(done) {
   game.state = "over";
   P.obj.visible = false;
@@ -324,10 +324,10 @@ function courseOver(done) {
   $("oScore").textContent = run.score.toLocaleString("en");
   $("oSecond").textContent = "Rings";
   $("oKills").textContent = `${run.next}/${COURSE.rings}`;
-  $("oThird").textContent = done ? "Time" : "Size";
-  $("oBest").textContent = done ? clock(run.t) : COURSE.sizes[run.size].name;
+  $("oThird").textContent = done ? "Time" : "Level";
+  $("oBest").textContent = done ? clock(run.t) : COURSE.levels[run.level].name;
   $("oUnlock").textContent = opened
-    ? `Next: ${opened} rings, at more points a ring!`
+    ? `Next level open: ${opened}. Closer rings, tighter turns, more points!`
     : done && run.bonus
       ? `Time bonus +${run.bonus.toLocaleString("en")}`
       : "";
@@ -680,6 +680,10 @@ function initUI() {
     map: () => opt.map,
   });
   mapButtons($("maps"), "map");
+  if (unlockAll)
+    document
+      .querySelector("#maps + .pickNote")
+      .prepend("Testing: every map and course level is open. ");
   for (const b of document.querySelectorAll("[data-map]"))
     b.addEventListener("click", () => setMap(b.dataset.map));
   setMap(opt.map, false);

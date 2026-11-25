@@ -53,8 +53,14 @@ try {
 } catch {
   // No storage (private mode, sandboxed frame): best score is per-session.
 }
+// Testing (make debug UNLOCK=1, or ?unlock on the dev server): every map and
+// course level open. Only a dev build reads it, so a released game can't be
+// unlocked from its address.
+export const unlockAll =
+  !!import.meta.env?.DEV && /[?&]unlock\b/.test(window.location.search);
+
 // A map the player has earned (constants.js UNLOCK).
-export const mapOpen = (id) => !UNLOCK[id] || S.best > UNLOCK[id];
+export const mapOpen = (id) => unlockAll || !UNLOCK[id] || S.best > UNLOCK[id];
 
 export const game = {
   mode: "classic", // 'classic' | 'free'

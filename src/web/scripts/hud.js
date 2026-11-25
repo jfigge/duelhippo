@@ -36,7 +36,7 @@ import { enemies } from "./ai.js";
 import { remotes, teamScores } from "./remote.js";
 import { net, isMode, myTeam } from "./net/bus.js";
 import { TEAM } from "./net/teams.js";
-import { run, RINGS, clock } from "./course.js";
+import { run, COURSES, clock } from "./course.js";
 
 let hudT = 0,
   warnT = 0,
@@ -133,6 +133,7 @@ export function hud(dt) {
   // The obstacle course: the ring to fly next, and the clock.
   $("hCourseRow").classList.toggle("hidden", !run.on);
   if (run.on) {
+    const RINGS = COURSES[run.level];
     $("hRing").textContent =
       `${Math.min(run.next + 1, RINGS.length)}/${RINGS.length}`;
     $("hTime").textContent = clock(run.t);
@@ -215,6 +216,7 @@ function drawRadar() {
     dot(EB.x, EB.z, "#ff55ff", 10);
   }
   // The obstacle course's next ring, and the one after.
+  const RINGS = run.on ? COURSES[run.level] : [];
   if (run.on)
     for (let i = run.next + 1; i >= run.next; i--)
       if (RINGS[i])

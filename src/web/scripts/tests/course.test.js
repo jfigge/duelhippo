@@ -18,8 +18,8 @@
  */
 
 // course.test.js — the obstacle course: fifty rings flown in order against
-// the clock; three sizes, each opened by finishing the one before; its own
-// table, apart from the best score. Port only.
+// the clock; three levels, each closer and tighter, each opened by finishing
+// the one before; its own table, apart from the best score. Port only.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -30,16 +30,16 @@ const { w, duel } = game;
 const P = duel.P,
   S = duel.S;
 const $ = (id) => w.document.getElementById(id);
-const { RINGS, run } = await import("../course.js");
+const { COURSES, run } = await import("../course.js");
 const { COURSE } = await import("../constants.js");
 const { mapNow } = await import("../maps.js");
 const msg = () => $("msg").textContent;
-const size = (i) => $("cSizes").children[i];
+const level = (i) => $("cSizes").children[i];
 
 // Put the plane `back` m short of ring `i`, flying straight through it,
 // `off` m to one side of its middle; and let it fly on for a second.
 function through(i, off = 0, back = 25) {
-  const { c, n } = RINGS[i];
+  const { c, n } = COURSES[run.level][i];
   game.poke((P) => {
     P.grounded = false;
     P.alive = true;
@@ -55,26 +55,38 @@ function through(i, off = 0, back = 25) {
   game.run(900);
 }
 
-test("fifty rings, far apart, gently turning, over the flat, never too low", () => {
-  assert.equal(RINGS.length, 50);
-  for (const { c } of RINGS) {
-    assert.ok(c.y >= 40 && c.y <= 240, `ring at ${c.y} m`);
-    assert.ok(Math.hypot(c.x - 1400, c.z) < 2700, "over the flat");
-  }
-  for (let i = 1; i < 50; i++) {
-    const d = RINGS[i].c.distanceTo(RINGS[i - 1].c);
-    assert.ok(d > 370 && d < 490, `${d} m apart`);
-    const turn = RINGS[i].n.angleTo(RINGS[i - 1].n);
-    assert.ok(i < 2 || turn < 0.6, `ring ${i + 1} turns ${turn} rad`);
-  }
+test("three courses of fifty rings, each closer and tighter than the last", () => {
+  COURSES.forEach((rings, lv) => {
+    const { gap, turn } = COURSE.levels[lv];
+    assert.equal(rings.length, 50);
+    for (const { c } of rings) {
+      assert.ok(c.y >= 40 && c.y <= 240, `ring at ${c.y} m`);
+      assert.ok(Math.hypot(c.x - 1400, c.z) < 2700, "over the flat");
+    }
+    for (let i = 1; i < 50; i++) {
+      const d = rings[i].c.distanceTo(rings[i - 1].c);
+      assert.ok(
+        d > gap[0] - 10 && d < gap[1] + 10,
+        `level ${lv}: ${d} m apart`,
+      );
+      const t = rings[i].n.angleTo(rings[i - 1].n);
+      assert.ok(
+        i < 2 || t < turn + 0.25,
+        `level ${lv}: ring ${i + 1} turns ${t}`,
+      );
+    }
+  });
+  const span = (lv) => COURSES[lv].at(-1).c.distanceTo(COURSES[lv][0].c);
+  assert.ok(COURSE.levels[2].gap[1] < COURSE.levels[0].gap[0], "closer");
+  assert.ok(span(0) > 0 && span(2) > 0);
 });
 
-test("a new player can fly Large rings only, and has an empty table", () => {
+test("a new player can fly the Easy level only, and has an empty table", () => {
   $("bCourse").click();
   assert.ok(!$("course").classList.contains("hidden"));
-  assert.ok(!size(0).disabled);
-  assert.ok(size(1).disabled && size(2).disabled);
-  assert.match(size(1).textContent, /Finish Large first/);
+  assert.ok(!level(0).disabled);
+  assert.ok(level(1).disabled && level(2).disabled);
+  assert.match(level(1).textContent, /Finish Easy first/);
   assert.match($("cBoard").textContent, /No scores yet/);
 });
 
@@ -102,32 +114,34 @@ test("the course: rings in order, a miss says go round, no enemies", () => {
   assert.equal(P.fuel, 100);
 });
 
-test("finishing: the score, a time bonus, the table, and Medium opens", () => {
+test("finishing: the score, a time bonus, the table, and Tight opens", () => {
   for (let i = 2; i < 50; i++) through(i);
   assert.equal(duel.state, "over");
   assert.match($("oTitle").textContent, /Course complete/);
   assert.equal($("oKills").textContent, "50/50");
   assert.ok(run.bonus > 0);
   assert.equal(run.score, 5000 + run.bonus);
-  assert.match($("oUnlock").textContent, /Medium rings/);
+  assert.match($("oUnlock").textContent, /Next level open: Tight/);
   assert.equal($("oCourse").querySelectorAll("li").length, 1);
   assert.ok($("oCourse").querySelector("li.mine"));
   assert.equal(S.best, 0, "the course is not the one-player best");
   $("oMenu").click();
   $("bCourse").click();
-  assert.ok(!size(1).disabled, "Medium is open");
-  assert.ok(size(2).disabled, "Small is not yet");
+  assert.ok(!level(1).disabled, "Tight is open");
+  assert.ok(level(2).disabled, "Twisting is not yet");
 });
 
-test("Medium rings are smaller, and score twice as much", () => {
-  size(1).click();
+test("Tight is its own course, closer together, at twice the points", () => {
+  level(1).click();
   $("cFly").click();
-  through(0, 14); // inside a Large ring, outside a Medium one
-  assert.equal(run.next, 0);
+  assert.equal(run.level, 1);
   through(0);
-  assert.equal(run.score, COURSE.sizes[1].pts);
+  through(1);
+  assert.equal(run.score, 2 * COURSE.levels[1].pts);
+  const gap = COURSES[1][1].c.distanceTo(COURSES[1][0].c);
+  assert.ok(gap < COURSE.levels[0].gap[0], `${gap} m to the next ring`);
   $("quit").click(); // out of planes, unfinished: on the table all the same
   assert.match($("oTitle").textContent, /Out of planes/);
-  assert.match($("oCourse").textContent, /unfinished/);
+  assert.match($("oCourse").textContent, /Tight · unfinished/);
   assert.ok($("oUnlock").classList.contains("hidden"));
 });

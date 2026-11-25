@@ -18,11 +18,12 @@
  */
 
 // course.js — the obstacle course (constants.js COURSE): fifty rings over
-// the Countryside, flown in order against the clock, at one of three sizes.
+// the Countryside, flown in order against the clock, at one of three
+// levels: each a course of its own, tighter than the last.
 //
-// The course is laid out from its own seeded generator, so every flight
+// Each level is laid out from its own seeded generator, so every flight
 // (and every player) flies the same one. The clock starts at the first ring
-// and stops at the last. The record (the sizes opened, and the best scores)
+// and stops at the last. The record (the levels opened, and the best scores)
 // lives in localStorage: the course has its own table, not the one-player
 // board's, and its scores do not count toward opening maps.
 
@@ -32,6 +33,7 @@ import { scene, put } from "./scene.js";
 import { say } from "./msg.js";
 import { sfx } from "./audio.js";
 import { P } from "./flight.js";
+import { unlockAll } from "./state.js";
 
 // mulberry32, as maps.js has it: the course must not touch Math.random.
 function seeded(seed) {
@@ -43,27 +45,24 @@ function seeded(seed) {
   };
 }
 
-// The rings' centres and the way through each: off the home runway's far
-// end and up, then onward in gentle climbs, dives and turns. They are far
-// apart (380–480 m: six or seven seconds' flying) and each turns at most
-// 30° from the last and climbs or dives at most 7°, so there is time to
-// line up on the next. Kept over the flat ground (within 2200 m of the
-// middle) and 40–240 m up.
-const GAP = [380, 480],
-  TURN = 0.52,
-  CLIMB = 0.12;
-export const RINGS = (() => {
-  const rand = seeded(50),
+// A level's rings: their centres and the way through each. Off the home
+// runway's far end and up, then onward in climbs, dives and turns, each
+// ring `gap` m on from the last and turned at most `turn` from it, climbing
+// or diving at most `climb` (constants.js COURSE.levels). Kept over the
+// flat ground (within 2200 m of the middle) and 40–240 m up.
+function layout(level) {
+  const { gap, turn: TURN, climb: CLIMB } = COURSE.levels[level],
+    rand = seeded(50 + level),
     out = [];
   let x = 900,
     y = 60,
     z = 0,
     hd = 0;
   for (let i = 0; i < COURSE.rings; i++) {
-    const d = i ? GAP[0] + rand() * (GAP[1] - GAP[0]) : 0;
+    const d = i ? gap[0] + rand() * (gap[1] - gap[0]) : 0;
     let climb = 0;
     if (i) {
-      let turn = (rand() - 0.5) * 0.7;
+      let turn = (rand() - 0.5) * 1.4 * TURN;
       // Far from the middle, turn back towards it.
       const off = Math.atan2(-z, CX - x) - hd,
         far = Math.hypot(x - CX, z) / 2200;
@@ -81,10 +80,12 @@ export const RINGS = (() => {
     [x, y, z] = [nx, ny, nz];
   }
   return out;
-})();
+}
+export const COURSES = COURSE.levels.map((_, i) => layout(i));
 
 // ── The record ──────────────────────────────────────────────────────────────
-// {open: sizes flown (0: Large only), best: [{n, s, z, t}] top ten}.
+// {open: the highest level open (0: Easy only), best: [{n, s, z (the
+// level), t}] top ten}.
 function load() {
   try {
     const r = JSON.parse(window.localStorage.getItem(COURSE_KEY));
@@ -102,13 +103,13 @@ function keep() {
     // No storage: the record lasts the session.
   }
 }
-export const sizeOpen = (z) => z <= record.open;
+export const levelOpen = (z) => unlockAll || z <= record.open;
 export const courseBest = () => record.best;
 
 // ── A flight ────────────────────────────────────────────────────────────────
 export const run = {
   on: false,
-  size: 0,
+  level: 0,
   next: 0, // the ring to fly through next
   t: 0, // seconds since the first ring
   score: 0,
@@ -121,9 +122,9 @@ const COLOURS = { next: 0xffe66b, soon: 0x55ffff, later: 0xdedede };
 function draw() {
   for (const m of meshes) m.removeFromParent();
   meshes.length = 0;
-  const { r } = COURSE.sizes[run.size];
-  const geo = new THREE.TorusGeometry(r, Math.max(0.9, r * 0.09), 8, 40);
-  for (const ring of RINGS) {
+  const r = COURSE.r,
+    geo = new THREE.TorusGeometry(r, Math.max(0.9, r * 0.09), 8, 40);
+  for (const ring of COURSES[run.level]) {
     const m = new THREE.Mesh(
       geo,
       new THREE.MeshLambertMaterial({ color: COLOURS.later }),
@@ -150,9 +151,9 @@ function shade() {
   });
 }
 
-export function startCourse(size) {
+export function startCourse(level) {
   run.on = true;
-  run.size = sizeOpen(size) ? size : 0;
+  run.level = levelOpen(level) ? level : 0;
   run.next = 0;
   run.t = 0;
   run.score = 0;
@@ -175,8 +176,10 @@ export function updCourse(dt) {
   if (!run.on || run.done) return false;
   if (run.next > 0) run.t += dt;
   P.fuel = 100; // the course is about flying, not fuel
-  const ring = RINGS[run.next],
-    { r, pts } = COURSE.sizes[run.size];
+  const RINGS = COURSES[run.level],
+    ring = RINGS[run.next],
+    r = COURSE.r,
+    { pts } = COURSE.levels[run.level];
   if (P.alive) {
     const d0 = last.clone().sub(ring.c).dot(ring.n),
       d1 = hit.copy(P.pos).sub(ring.c).dot(ring.n);
@@ -200,22 +203,22 @@ export function updCourse(dt) {
 
 function finish() {
   run.done = true;
-  const { pts } = COURSE.sizes[run.size];
+  const { pts, par } = COURSE.levels[run.level];
   run.bonus = Math.max(
     0,
-    Math.round(((COURSE.par - run.t) * COURSE.bonus * pts) / 100),
+    Math.round(((par - run.t) * COURSE.bonus * pts) / 100),
   );
   run.score += run.bonus;
   return true;
 }
 
-// The flight's score into the table (top ten), and the next size opened
+// The flight's score into the table (top ten), and the next level opened
 // if this one was finished. Returns {rank (0-based, or -1), opened}.
 export function recordCourse(initials) {
   const entry = {
     n: initials || "???",
     s: run.score,
-    z: run.size,
+    z: run.level,
     t: run.done ? Math.round(run.t * 10) / 10 : null,
   };
   record.best.push(entry);
@@ -225,11 +228,11 @@ export function recordCourse(initials) {
   let opened = null;
   if (
     run.done &&
-    run.size === record.open &&
-    record.open < COURSE.sizes.length - 1
+    run.level === record.open &&
+    record.open < COURSE.levels.length - 1
   ) {
     record.open++;
-    opened = COURSE.sizes[record.open].name;
+    opened = COURSE.levels[record.open].name;
   }
   keep();
   return { rank, opened };

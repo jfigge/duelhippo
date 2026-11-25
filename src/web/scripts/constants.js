@@ -80,20 +80,43 @@ export const UNLOCK = Object.fromEntries(
 );
 
 // ── The obstacle course ─────────────────────────────────────────────────────
-// Not part of the prototype. `rings` rings over the Countryside, the same
-// course every time, flown in order against the clock. Three sizes (`r`,
-// the hole's radius in m); a smaller ring scores more per ring (`pts`), and
-// finishing the course at one size opens the next. Finishing adds a time
-// bonus: `bonus` points a second under `par` seconds, times the size's
+// Not part of the prototype. `rings` rings over the Countryside, flown in
+// order against the clock, every ring's hole `r` m across the middle. Three
+// levels, each its own course, the same every time: the rings closer
+// together (`gap`, m) and the turns between them tighter (`turn`, rad, at
+// most; `climb`, rad, at most) as they go. Harder levels score more a ring
+// (`pts`), and finishing one opens the next. Finishing adds a time bonus:
+// `bonus` points a second under the level's `par` seconds, times its
 // `pts` / 100.
 export const COURSE = {
   rings: 50,
-  sizes: [
-    { name: "Large", r: 18, pts: 100 },
-    { name: "Medium", r: 12, pts: 200 },
-    { name: "Small", r: 7, pts: 300 },
+  r: 18,
+  levels: [
+    {
+      name: "Easy",
+      gap: [380, 480],
+      turn: 0.52,
+      climb: 0.12,
+      pts: 100,
+      par: 480,
+    },
+    {
+      name: "Tight",
+      gap: [260, 340],
+      turn: 0.8,
+      climb: 0.17,
+      pts: 200,
+      par: 360,
+    },
+    {
+      name: "Twisting",
+      gap: [170, 240],
+      turn: 1.05,
+      climb: 0.22,
+      pts: 300,
+      par: 260,
+    },
   ],
-  par: 480,
   bonus: 10,
 };
 export const COURSE_KEY = "duelhippo.course";
