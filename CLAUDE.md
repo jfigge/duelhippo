@@ -28,7 +28,8 @@ with a seeded `Math.random`. If you change gameplay deliberately, the suite
 will fail. Say so, and agree with the user how to re-baseline it. Do not
 loosen the tolerance to make it pass.
 
-The port adds these things the prototype lacks. None of them changes
+The port adds these things the prototype lacks. Apart from the enemy-turn
+fix, which the suites' copy of the prototype gets too, none of them changes
 keyboard gameplay at full speed, which is what the equivalence suites run:
 
 - **Game speed.** `opt.speed` scales `dt` in `frame()`, after the 50 ms cap.
@@ -73,6 +74,21 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   tighter landings, homing missiles) run only behind a field the Kite has as
   zero or null. Keep it that way: a Kite game must stay the prototype's.
   Tested in `planes`, `spin` and `missiles`.
+- **Maps** (`maps.js`). The Countryside is the prototype's world and the
+  default; Classic always uses it. The City and the Sea are built on first
+  use from their own seeded generator, never `Math.random`, and plug into
+  `land` in `world.js`: towers and flight decks count as ground in
+  `groundY`, so everything that meets the ground meets them. While the
+  Countryside is up every `land` hook is null (or 1, or the prototype's
+  value), so `HOME`, `EB` and the scene are the prototype's. A team game's
+  map is the organiser's (`setup.map`). Tested in `maps.test.js`.
+- **Enemy turns** (Free flight). In the prototype the flyers never turned:
+  `des` in `updEnemy` aliased `tv`, which the turn overwrote with the
+  flyer's own heading. The port gives `des` its own vector, and the
+  harness makes the same one-line fix to the prototype's source as it
+  loads it (`PROTO_FIXES` in `tests/harness.js`; `features/` is never
+  edited), so the equivalence suites still compare frame by frame. Any
+  future deliberate fix to the prototype's behaviour goes there too.
 - **Enemy rounds.** These are drawn pointing the way they fly. In the
   prototype, `fire()` aliased `tv` and aimed the mesh wrongly; only the
   drawing changed.
@@ -96,6 +112,7 @@ Rules that follow from this:
 `src/web/scripts/` contains these modules:
 
 - `world`: terrain, airfields, town, hippos
+- `maps`: the City and the Sea, and switching between maps
 - `flight`: the player
 - `ai`: the enemies
 - `weapons`: guns and bombs

@@ -29,7 +29,7 @@
 //
 // Lobby (the organiser is the lowest seat in the room)
 //   hi     {v, h, n}                   to each player met: version, hash, name
-//   setup  {v, layout, mode, ff, speed, roster: [[seat, team]]}
+//   setup  {v, layout, mode, map, ff, speed, roster: [[seat, team]]}
 //                                      organiser: the match on offer
 //   team   {team}                      to the organiser: put me on that team
 //   board  {g, dogfight, flag, endless} each: its copy of the group board
@@ -61,7 +61,7 @@
 
 import { PLANES } from "../constants.js";
 
-export const PROTO = 4;
+export const PROTO = 5;
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const r4 = (v) => Math.round(v * 10000) / 10000;

@@ -24,7 +24,7 @@
 // type it in. There is no host in the game itself, but someone has to set it
 // up: the organiser, who is whoever has the lowest seat in the room (so if
 // they leave, the next one takes over). The organiser picks the team layout,
-// the game and friendly fire, and keeps the roster of who is on which team;
+// the game, the map and friendly fire, and keeps the roster of who is on which team;
 // everyone else asks to change team, and sees the organiser's setup. Every
 // player says hello to every other with their protocol version, hash and
 // name, and the hashes of everyone on the roster name the group's scoreboard
@@ -35,6 +35,7 @@ import { net } from "./bus.js";
 import { serverUrl, serverHint } from "./config.js";
 import { Mesh } from "./link.js";
 import { PROTO } from "./protocol.js";
+import { MAPS } from "../constants.js";
 import { matchMessage, peerLeft } from "./match.js";
 import {
   LAYOUTS,
@@ -64,7 +65,7 @@ import { renderGroup } from "../scoreboard.js";
 const LOBBY = new Set(["hi", "setup", "team", "board", "go", "bad", "bye"]);
 const COUNT_FROM = 3;
 
-let act = null; // { startMatch, toTitle, speed }, from game.js
+let act = null; // { startMatch, toTitle, speed, map }, from game.js
 let link = null;
 let playing = false;
 let counting = false;
@@ -73,7 +74,14 @@ let setup = blank();
 let shownGroup = null;
 
 function blank() {
-  return { layout: "2x1", mode: "dogfight", ff: false, speed: 1, roster: [] };
+  return {
+    layout: "2x1",
+    mode: "dogfight",
+    map: "field",
+    ff: false,
+    speed: 1,
+    roster: [],
+  };
 }
 
 const show = (id) => {
@@ -129,6 +137,8 @@ export function initLobby(actions) {
   sel.addEventListener("change", () => organise({ layout: sel.value }));
   for (const b of document.querySelectorAll("[data-gmode]"))
     b.addEventListener("click", () => organise({ mode: b.dataset.gmode }));
+  for (const b of document.querySelectorAll("[data-lmap]"))
+    b.addEventListener("click", () => organise({ map: b.dataset.lmap }));
   $("onFF").addEventListener("click", () => organise({ ff: !setup.ff }));
   $("onStart").addEventListener("click", go);
   $("onBack").addEventListener("click", leave);
@@ -177,6 +187,8 @@ function connected(m) {
   people.set(m.seat, whoAmI());
   setup = blank();
   setup.speed = act.speed();
+  // The organiser's first offer is the map they fly alone.
+  setup.map = act.map();
   setup.roster = [{ seat: m.seat, team: 0 }];
   shownGroup = null;
   m.onmessage = (msg, from) =>
@@ -294,6 +306,7 @@ function cleanSetup(m) {
   return {
     layout: lay.id,
     mode: MODES[m.mode] ? m.mode : "dogfight",
+    map: Object.hasOwn(MAPS, m.map) ? m.map : "field",
     ff: m.ff === true,
     speed: [0.25, 0.5, 0.75, 1].includes(m.speed) ? m.speed : 1,
     roster,
@@ -330,6 +343,7 @@ function publish() {
     v: PROTO,
     layout: setup.layout,
     mode: setup.mode,
+    map: setup.map,
     ff: setup.ff,
     speed: setup.speed,
     roster: setup.roster.map((p) => [p.seat, p.team]),
@@ -366,6 +380,10 @@ function refresh() {
   $("onLayout").disabled = !boss;
   for (const b of document.querySelectorAll("[data-gmode]")) {
     b.classList.toggle("on", b.dataset.gmode === setup.mode);
+    b.disabled = !boss;
+  }
+  for (const b of document.querySelectorAll("[data-lmap]")) {
+    b.classList.toggle("on", b.dataset.lmap === setup.map);
     b.disabled = !boss;
   }
   setLabel($("onFF"), "Friendly fire", setup.ff ? "on" : "off");
@@ -428,6 +446,8 @@ function refresh() {
 
 const describe = () =>
   MODES[setup.mode] +
+  " · " +
+  MAPS[setup.map] +
   " · Free flight" +
   (setup.ff ? " · Friendly fire" : "") +
   (setup.speed < 1 ? ` · ${Math.round(setup.speed * 100)}% speed` : "");
@@ -494,6 +514,7 @@ function countdown() {
 function begin() {
   const lay = layout(setup.layout);
   net.mode = setup.mode;
+  net.map = setup.map;
   net.ff = setup.ff;
   net.teams = lay.teams;
   net.roster.clear();

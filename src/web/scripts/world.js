@@ -27,6 +27,11 @@
 // prototype's order (ground, runways, dressing, trees, clouds, hippos), so a
 // seeded Math.random lays the world out exactly as the prototype did — the
 // equivalence test relies on that.
+//
+// That world is the Countryside map. The others (maps.js: City, Sea) are
+// built on demand from their own seeded random numbers, never Math.random,
+// and plug into the hooks below (`land`); while it is the Countryside, every
+// hook is null and the world is the prototype's.
 
 import * as THREE from "three";
 import { V, Q, PI, AY, rnd, clamp, tv2 } from "./util.js";
@@ -40,7 +45,39 @@ import { say } from "./msg.js";
 import { net, send, myTeam } from "./net/bus.js";
 import { TEAM, fieldSpots } from "./net/teams.js";
 
+// The map in play, as the simulation sees it (maps.js fills it in; all
+// null on the Countryside). `height` is the ground's height, counting what
+// stands on it (towers, decks): whatever is under it is solid. `floor` is
+// the bare ground, for the camera. `crash` names what a crash at a point
+// hit; `brake` is how hard a plane stops on a runway, throttle idle; `deck`
+// is set where the runways are flight decks, with nothing round them to
+// roll onto; `ceil` is the cloud ceiling's height; `dust` the colour a
+// round kicks up where it lands; `avoid` steers a flyer round what it would
+// fly into (ai.js), and `agile` scales how hard it can turn.
+export const land = {
+  height: null,
+  floor: null,
+  crash: null,
+  brake: 7,
+  deck: false,
+  ceil: 0,
+  dust: 0xb9a47c,
+  avoid: null,
+  agile: 1,
+  // The town's buildings (or the fleet): [kind, x] or [kind, x, side, z].
+  town: TDEF,
+  // Kinds of target the other maps add (ships): kind → (group) → stats.
+  kinds: {},
+  // A team's own field: builds it into f.g, and returns its solids; and
+  // what to undo when the fields go.
+  field: null,
+  unfield: null,
+  // Where a team's flag stands, by its field: [x, z].
+  flagAt: null,
+};
+
 export function groundY(x, z) {
+  if (land.height) return land.height(x, z);
   const d = Math.max(Math.abs(x - CX), Math.abs(z));
   return d <= FLAT
     ? 0
@@ -48,8 +85,15 @@ export function groundY(x, z) {
         0.24 *
         (0.65 + 0.35 * Math.sin(x * 0.004 + 1) * Math.cos(z * 0.005));
 }
+// The ground without what stands on it, so the chase camera stays out of
+// the ground but is not thrown up onto every roof it passes.
+export const floorY = (x, z) => (land.floor ? land.floor(x, z) : groundY(x, z));
 export const onRun = (p, R) =>
   Math.abs(p.x - R.x) < R.hl && Math.abs(p.z - R.z) < R.hw;
+
+// Everything that is the Countryside's own, so another map can put it away.
+export const countryside = new THREE.Group();
+scene.add(countryside);
 
 // ── Ground: one patchwork mesh, flat play area, hills at the edges ──────────
 {
@@ -82,10 +126,10 @@ export const onRun = (p, R) =>
   );
   m.rotation.x = -PI / 2;
   m.position.x = CX;
-  scene.add(m);
+  countryside.add(m);
   // the dirt road the classic lane follows
   put(
-    scene,
+    countryside,
     flat(LANE.max - LANE.min + 600, 9, 0xb9a47c, -1),
     (LANE.min + LANE.max) / 2,
     0.03,
@@ -94,7 +138,7 @@ export const onRun = (p, R) =>
 }
 
 // ── Runways ─────────────────────────────────────────────────────────────────
-function runway(R, edge, into = scene) {
+export function runway(R, edge, into = scene) {
   put(into, flat(R.hl * 2, R.hw * 2, 0x8d8371, -2), R.x, 0.05, R.z);
   for (let x = -R.hl + 30; x < R.hl - 30; x += 32)
     put(into, flat(13, 1.2, 0xf4f1e6, -4), R.x + x, 0.06, R.z);
@@ -111,12 +155,12 @@ function runway(R, edge, into = scene) {
     for (const s of [-1, 1])
       put(into, box(1, 0.7, 1, edge), R.x + x, 0.35, R.z + s * (R.hw + 1.5));
 }
-runway(HOME, 0x55ffff);
-runway(EB, 0xff55ff);
+runway(HOME, 0x55ffff, countryside);
+runway(EB, 0xff55ff, countryside);
 
 // ── Solids you can fly into (free mode reaches the off-lane buildings) ──────
 export const solids = [];
-function hangar(x, z, roof, solid = true, into = scene) {
+export function hangar(x, z, roof, solid = true, into = scene) {
   const g = new THREE.Group();
   put(g, box(30, 10, 24, 0x8a6e52), 0, 5, 0);
   put(g, box(32, 2.4, 26, roof), 0, 11.2, 0);
@@ -128,34 +172,36 @@ function hangar(x, z, roof, solid = true, into = scene) {
 }
 {
   // home base dressing (behind the lane, visible as backdrop in classic)
-  hangar(-110, -60, 0x2fc6d6);
-  hangar(-150, -95, 0x2fc6d6);
+  hangar(-110, -60, 0x2fc6d6, true, countryside);
+  hangar(-150, -95, 0x2fc6d6, true, countryside);
   const tw = new THREE.Group();
   put(tw, box(6, 16, 6, 0xd9d2c0), 0, 8, 0);
   put(tw, box(9, 4, 9, 0x55ffff), 0, 18, 0);
   tw.position.set(140, 0, -55);
-  scene.add(tw);
+  countryside.add(tw);
   solids.push({ x: 140, z: -55, r: 6, h: 20 });
-  put(scene, box(0.4, 12, 0.4, 0xeeeeee), 120, 6, -28);
-  put(scene, box(5, 3, 0.15, 0x55ffff), 122.7, 10.5, -28);
+  put(countryside, box(0.4, 12, 0.4, 0xeeeeee), 120, 6, -28);
+  put(countryside, box(5, 3, 0.15, 0x55ffff), 122.7, 10.5, -28);
   const sock = new THREE.Mesh(
     new THREE.ConeGeometry(1.1, 5, 8, 1, true),
     M(0xff8a2a),
   );
   sock.rotation.z = PI / 2;
-  put(scene, sock, 166, 9, -30);
-  put(scene, box(0.3, 9, 0.3, 0xdddddd), 163.5, 4.5, -30);
+  put(countryside, sock, 166, 9, -30);
+  put(countryside, box(0.3, 9, 0.3, 0xdddddd), 163.5, 4.5, -30);
   for (let i = 0; i < 6; i++) {
     const d = new THREE.Mesh(
       new THREE.CylinderGeometry(0.9, 0.9, 1.8, 8),
       M(i % 2 ? 0xc23b3b : 0x2b6fb3),
     );
-    put(scene, d, -60 + (i % 3) * 2.1, 0.9 + (i > 2 ? 1.8 : 0), -40);
+    put(countryside, d, -60 + (i % 3) * 2.1, 0.9 + (i > 2 ? 1.8 : 0), -40);
   }
   // enemy airfield dressing
-  hangar(EB.x - 120, -70, 0xb03aa0);
-  hangar(EB.x + 120, -70, 0xb03aa0);
+  hangar(EB.x - 120, -70, 0xb03aa0, true, countryside);
+  hangar(EB.x + 120, -70, 0xb03aa0, true, countryside);
 }
+// The Countryside's solids, for when another map's are put back.
+export const COUNTRY_SOLIDS = solids.slice();
 
 // ── Trees (instanced) and clouds ────────────────────────────────────────────
 // Where each tree stands, so a team game can clear its airfields (below).
@@ -206,7 +252,7 @@ const trees = { crown: null, trunk: null, at: [], hidden: [] };
     }
   }
   crown.count = trunk.count = i;
-  scene.add(crown, trunk);
+  countryside.add(crown, trunk);
   trees.crown = crown;
   trees.trunk = trunk;
 
@@ -450,6 +496,8 @@ function makeTarget(kind, x, side, z = 0) {
     hp = 4;
     pts = 100;
     name = "Fuel depot";
+  } else if (land.kinds[kind]) {
+    ({ r, h, hp, pts, name } = land.kinds[kind](g));
   } else {
     put(g, box(20, 12, 20, 0xc9b48a), 0, 6, 0);
     put(g, box(22, 1.5, 22, 0xb03aa0), 0, 12.7, 0);
@@ -461,13 +509,16 @@ function makeTarget(kind, x, side, z = 0) {
     pts = 250;
     name = "Headquarters";
   }
-  g.position.set(x, 0, z);
+  // It stands on the ground: a flight deck, for a flag at sea.
+  const y = groundY(x, z);
+  g.position.set(x, y, z);
   scene.add(g);
   return {
     g,
     kind,
     name,
     x,
+    y,
     z,
     r,
     h,
@@ -478,9 +529,10 @@ function makeTarget(kind, x, side, z = 0) {
     side,
   };
 }
-// `defs` is TDEF in a one-player game (and Endless enemies). Bomb the flag
-// passes one [kind, x, team, z] per team (flagDefs).
-export function buildTargets(defs = TDEF) {
+// `defs` is the map's town (TDEF on the Countryside) in a one-player game
+// (and Endless enemies). Bomb the flag passes one [kind, x, team, z] per
+// team (flagDefs).
+export function buildTargets(defs = land.town) {
   for (const t of targets) scene.remove(t.g);
   targets.length = 0;
   for (const d of defs) targets.push(makeTarget(d[0], d[1], d[2], d[3]));
@@ -491,7 +543,7 @@ function wreck(t) {
   t.g.traverse((o) => {
     if (o.material && o.material.color) o.material.color.setHex(0x3b3530);
   });
-  boom(tv2.set(t.x, t.h * 0.5, t.z).clone(), true);
+  boom(tv2.set(t.x, t.y + t.h * 0.5, t.z).clone(), true);
 }
 export function hurtTarget(t, n, pos) {
   if (!t.alive) return;
@@ -563,11 +615,14 @@ export function buildFields(n) {
   fieldSpots(n).forEach(({ x, z }, team) => {
     const c = TEAM[team % TEAM.length];
     const f = { x, z, hl: 230, hw: 18, team, g: new THREE.Group() };
-    runway({ x: 0, z: 0, hl: f.hl, hw: f.hw }, c.plane[2], f.g);
-    hangar(-120, -70, c.plane[1], false, f.g);
+    if (land.field) fieldSolids.push(...land.field(f, c));
+    else {
+      runway({ x: 0, z: 0, hl: f.hl, hw: f.hw }, c.plane[2], f.g);
+      hangar(-120, -70, c.plane[1], false, f.g);
+      fieldSolids.push({ x: x - 120, z: z - 70, r: 17, h: 12.5 });
+    }
     f.g.position.set(x, 0, z);
     scene.add(f.g);
-    fieldSolids.push({ x: x - 120, z: z - 70, r: 17, h: 12.5 });
     fields.push(f);
   });
   solids.push(...fieldSolids);
@@ -586,12 +641,22 @@ export function clearFields() {
     if (i >= 0) solids.splice(i, 1);
   }
   fieldSolids = [];
+  if (land.unfield) land.unfield();
   hideTrees(() => false);
 }
 
 // A team's flag stands beside its runway, clear of the planes' path.
 export const flagDefs = () =>
-  fields.map((f) => ["flag", f.x + 60, f.team, f.z + 70]);
+  fields.map((f) => {
+    const [x, z] = land.flagAt ? land.flagAt(f) : [f.x + 60, f.z + 70];
+    return ["flag", x, f.team, z];
+  });
+
+// A map's own solids in place of the last one's, keeping the team fields'.
+export function setSolids(list) {
+  solids.length = 0;
+  solids.push(...list, ...fieldSolids);
+}
 
 export const onAnyField = (p) =>
   fields.some((f) => onRun(p, f)) || onRun(p, HOME) || onRun(p, EB);
@@ -621,7 +686,7 @@ export function updTown(dt) {
   for (const t of targets)
     if (t.alive && t.kind === "factory" && (t.smokeT -= dt) <= 0) {
       t.smokeT = 0.35;
-      puff(tv2.set(t.x + 8, 28, -4), 0x8a8a8a, 1, 1.5, 2, 4, 4);
+      puff(tv2.set(t.x + 8, t.y + 28, -4), 0x8a8a8a, 1, 1.5, 2, 4, 4);
     }
 }
 
@@ -643,6 +708,16 @@ function makeHippo(x) {
   return { g, x0: x, x, z: 0, alive: true, dir: 1, t: rnd(5) };
 }
 for (const x of [520, 1050, 1720]) hippos.push(makeHippo(x));
+
+// Where the hippos live on a map: [x, z, y] each (y below 0 is wading).
+export function placeHippos(spots) {
+  hippos.forEach((h, i) => {
+    const [x, z, y] = spots[i];
+    h.x0 = h.x = x;
+    h.z = z;
+    h.g.position.set(x, y, z);
+  });
+}
 
 export function scareHippo(h) {
   h.alive = false;

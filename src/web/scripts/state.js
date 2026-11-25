@@ -27,6 +27,8 @@
 import {
   BEST_KEY,
   INVERT_KEY,
+  MAPS,
+  MAP_KEY,
   PLANES,
   PLANE_KEY,
   SPEEDS,
@@ -60,10 +62,11 @@ export const game = {
 };
 
 // Player options. `speed` scales game time (constants.js SPEEDS), `invert`
-// flips pitch and `plane` is the plane type (constants.js PLANES) the player
-// last picked. All are remembered between sessions; anything unrecognised in
-// storage reads as full speed, normal pitch and the Kite.
-export const opt = { invert: false, speed: 1, plane: 0 };
+// flips pitch, `plane` is the plane type (constants.js PLANES) the player
+// last picked and `map` the map (constants.js MAPS). All are remembered
+// between sessions; anything unrecognised in storage reads as full speed,
+// normal pitch, the Kite and the Countryside.
+export const opt = { invert: false, speed: 1, plane: 0, map: "field" };
 try {
   const saved = +window.localStorage.getItem(SPEED_KEY);
   if (SPEEDS.includes(saved)) opt.speed = saved;
@@ -71,6 +74,8 @@ try {
   const plane = window.localStorage.getItem(PLANE_KEY);
   if (plane !== null && PLANES[+plane] && Number.isInteger(+plane))
     opt.plane = +plane;
+  const map = window.localStorage.getItem(MAP_KEY);
+  if (Object.hasOwn(MAPS, map)) opt.map = map;
 } catch {
   // No storage: full speed, normal pitch and the Kite each session.
 }

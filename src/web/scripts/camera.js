@@ -29,7 +29,7 @@ import { UP, tv, basis } from "./util.js";
 import { HOME, ADS } from "./constants.js";
 import { camera } from "./scene.js";
 import { game } from "./state.js";
-import { groundY } from "./world.js";
+import { floorY } from "./world.js";
 import { P, PB, crashAt, aiming } from "./flight.js";
 
 let orbitT = 0;
@@ -98,7 +98,7 @@ export function updCamera(dt) {
   const want = tv.copy(P.pos).addScaledVector(b.f, -21).addScaledVector(b.u, 4);
   want.y += 3.5;
   camera.position.lerp(want, 1 - Math.exp(-dt * 6));
-  const gy = groundY(camera.position.x, camera.position.z) + 1.2;
+  const gy = floorY(camera.position.x, camera.position.z) + 1.2;
   if (camera.position.y < gy) camera.position.y = gy;
   camera.up.copy(b.u).lerp(UP, 0.55).normalize();
   camera.lookAt(tv.copy(P.pos).addScaledVector(b.f, 18));

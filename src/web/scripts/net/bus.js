@@ -33,6 +33,7 @@ export const net = {
   seat: null, // this player's seat in the room, 0–8
   link: null, // net/link.js, while connected
   mode: null, // "dogfight" | "flag" | "endless"
+  map: "field", // the map (constants.js MAPS)
   ff: false, // friendly fire: teammates can hurt each other
   teams: 0, // how many teams this match has
   // seat → {seat, h, n, team}: everyone in the match, this player included.

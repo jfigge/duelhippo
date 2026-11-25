@@ -53,6 +53,25 @@ export const SKY = 0x8fd3ff;
 
 export const BEST_KEY = "duelhippo.best";
 
+// ── Maps ────────────────────────────────────────────────────────────────────
+// Not part of the prototype. The Countryside is the prototype's own world;
+// the others are built by maps.js, for Free flight and team games (Classic
+// is always the Countryside). Picked on the title screen, or by the
+// organiser of a team game.
+export const MAPS = { field: "Countryside", city: "City", sea: "Sea" };
+export const MAP_KEY = "duelhippo.map";
+
+// The City: a grid of blocks `pitch` m apart, each `block` m square (so the
+// streets are 90 m wide), its towers up to 460 m tall under a solid cloud
+// ceiling at `ceil` m.
+export const CITY = { pitch: 230, block: 140, ceil: 250 };
+
+// The Sea: each side's runway is a carrier's flight deck, `deck` m above the
+// water and hl × hw (half-length, half-width) — 280 m long, about 60% of a
+// runway. Its arrester wires stop a plane at `brake` m/s² with the throttle
+// idle (a runway's is 7).
+export const SEA = { deck: 16, hl: 140, hw: 22, brake: 16 };
+
 // Game speed: the factor every simulated second is scaled by. Not part of the
 // prototype; 1 is the prototype's own pace and the default.
 export const SPEEDS = [0.25, 0.5, 0.75, 1];

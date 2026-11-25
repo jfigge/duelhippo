@@ -117,7 +117,25 @@ function fakeRenderer(w) {
   };
 }
 
-// ── The prototype, as shipped ───────────────────────────────────────────────
+// ── The prototype, as shipped, with its known bugs fixed ───────────────────
+// Each fix is a change to the prototype's source text, made here because
+// features/ is never edited. The port makes the same fix, so the suites
+// still hold it to the prototype frame by frame. A fix whose text is no
+// longer found fails loudly rather than quietly comparing against the bug.
+const PROTO_FIXES = [
+  // Free-flight enemy flyers never turned: `des` was `to`, the shared `tv`,
+  // which the turn overwrote with the flyer's own heading (ai.js updEnemy).
+  ["const des = to.normalize(),", "const des = to.clone().normalize(),"],
+];
+function fixPrototype(src) {
+  for (const [from, to] of PROTO_FIXES) {
+    if (!src.includes(from))
+      throw new Error(`prototype fix not found: ${from}`);
+    src = src.replace(from, to);
+  }
+  return src;
+}
+
 export function loadPrototype(seed) {
   const html = readFileSync(PROTO + "index.html", "utf8")
     .replace(/<!--FONTS-->[\s\S]*?<!--\/FONTS-->/, "")
@@ -130,7 +148,7 @@ export function loadPrototype(seed) {
   w.THREE.WebGLRenderer = function () {
     return fakeRenderer(w);
   };
-  w.eval(readFileSync(PROTO + "game.js", "utf8"));
+  w.eval(fixPrototype(readFileSync(PROTO + "game.js", "utf8")));
   return driver(w, w.__duel);
 }
 

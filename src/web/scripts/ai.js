@@ -50,7 +50,7 @@ import { S, game } from "./state.js";
 import { sfx } from "./audio.js";
 import { puff, boom } from "./effects.js";
 import { say } from "./msg.js";
-import { groundY, makePlane, blob, syncShadow } from "./world.js";
+import { groundY, makePlane, blob, syncShadow, land } from "./world.js";
 import { CX } from "./constants.js";
 import { P, crash } from "./flight.js";
 import { fire } from "./weapons.js";
@@ -89,6 +89,13 @@ export function ensureEnemies(n) {
   while (enemies.length < n) addEnemy(enemies.length);
 }
 
+// The City: flyers keep under its cloud ceiling, and start out over the
+// boulevard if their spot is inside a tower. Elsewhere `below` is y itself.
+const below = (y) => (land.ceil ? Math.min(y, land.ceil - 70) : y);
+function clearOf(e) {
+  if (land.ceil && groundY(e.pos.x, e.pos.z) > e.pos.y - 40) e.pos.z = 0;
+}
+
 // Whose machine decides what happens to a flyer: this one's, except in a
 // team game, where each machine owns the flyer at its seat.
 export const ownsEnemy = (e) => !net.on || enemies.indexOf(e) === net.seat;
@@ -104,9 +111,10 @@ export function spawnEnemy() {
   e.turn = 0.7 + Math.min(0.35, S.wave * 0.06 + S.kills * 0.01);
   e.pos.set(
     EB.x + rnd(-250, 350),
-    rnd(220, 380),
+    below(rnd(220, 380)),
     game.mode === "classic" ? 0 : rnd(-300, 300),
   );
+  clearOf(e);
   e.th = PI;
   e.ph = e.phT = PI;
   e.up.set(0, 1, 0);
@@ -134,6 +142,7 @@ export function killEnemy(e, scored, by = scored && net.on ? net.seat : null) {
 }
 
 const EB_ = basis(new Q());
+const AIM = new V();
 
 // Who a flyer hunts: the player — or, in a team game, whichever plane in the
 // air is nearest. Ghosts are not worth the bullets.
@@ -166,7 +175,8 @@ export function hostEnemy(dt) {
   e.cd = 2;
   e.burst = 0;
   e.turn = 0.85;
-  e.pos.set(CX + rnd(-1200, 1200), rnd(260, 420), rnd(-1200, 1200));
+  e.pos.set(CX + rnd(-1200, 1200), below(rnd(260, 420)), rnd(-1200, 1200));
+  clearOf(e);
   e.up.set(0, 1, 0);
   e.q.setFromAxisAngle(AY, rnd(0, 2 * PI));
   e.obj.visible = true;
@@ -183,7 +193,7 @@ export function updEnemy(e, dt) {
     e.t += dt * 0.25;
     tgt = tv2.set(
       EB.x + Math.cos(e.t + e.ph0) * 420,
-      270 + Math.sin(e.t * 1.7 + e.ph0) * 40,
+      below(270 + Math.sin(e.t * 1.7 + e.ph0) * 40),
       game.mode === "classic" ? 0 : Math.sin(e.t + e.ph0) * 420,
     );
   }
@@ -205,13 +215,18 @@ export function updEnemy(e, dt) {
     qSide(e.q, e.th, e.ph);
   } else {
     if (alt < 100) to.y = to.length() * 0.7;
-    const des = to.normalize(),
+    // The City: steer round towers ahead, and under the ceiling.
+    if (land.avoid) land.avoid(e.pos, b.f, to);
+    // `des` has a vector of its own. The prototype's was `to`, which is the
+    // shared `tv`, which the turn below overwrites with the plane's own
+    // heading before using it: so its flyers never turned in Free flight.
+    const des = AIM.copy(to).normalize(),
       ang = Math.acos(clamp(b.f.dot(des), -1, 1));
     const nf = tv2.copy(b.f);
     if (ang > 1e-4)
       nf.applyAxisAngle(
         tv.copy(b.f).cross(des).normalize(),
-        Math.min(ang, e.turn * dt),
+        Math.min(ang, e.turn * land.agile * dt),
       );
     nf.y = clamp(nf.y, -0.7, 0.7);
     nf.normalize();

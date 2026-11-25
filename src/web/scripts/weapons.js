@@ -33,7 +33,14 @@ import { game, opt } from "./state.js";
 import { sfx } from "./audio.js";
 import { puff, boom } from "./effects.js";
 import { say } from "./msg.js";
-import { groundY, targets, hurtTarget, hippos, scareHippo } from "./world.js";
+import {
+  groundY,
+  targets,
+  hurtTarget,
+  hippos,
+  scareHippo,
+  land,
+} from "./world.js";
 import { P, PB } from "./flight.js";
 import { enemies, killEnemy, ownsEnemy } from "./ai.js";
 import { solidRemotes } from "./remote.js";
@@ -131,7 +138,11 @@ export function updBullets(dt) {
           }
       if (!hit)
         for (const t of targets)
-          if (t.alive && p.y < t.h && Math.hypot(p.x - t.x, p.z - t.z) < t.r) {
+          if (
+            t.alive &&
+            p.y < t.y + t.h &&
+            Math.hypot(p.x - t.x, p.z - t.z) < t.r
+          ) {
             hit = true;
             hurtTarget(t, 1, p.clone());
             break;
@@ -153,7 +164,7 @@ export function updBullets(dt) {
     }
     if (!hit && p.y < groundY(p.x, p.z)) {
       hit = true;
-      puff(p, 0xb9a47c, 2, 4, 0.8, 0.5, 2);
+      puff(p, land.dust, 2, 4, 0.8, 0.5, 2);
     }
     if (hit || b.life <= 0) {
       b.on = false;

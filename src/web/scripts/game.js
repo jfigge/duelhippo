@@ -28,7 +28,14 @@
 
 import * as THREE from "three";
 import { $, setLabel } from "./util.js";
-import { BEST_KEY, INVERT_KEY, SPEEDS, SPEED_KEY } from "./constants.js";
+import {
+  BEST_KEY,
+  INVERT_KEY,
+  SPEEDS,
+  SPEED_KEY,
+  MAPS,
+  MAP_KEY,
+} from "./constants.js";
 import { scene, camera } from "./scene.js";
 import { S, game, opt } from "./state.js";
 import { sfx } from "./audio.js";
@@ -71,6 +78,7 @@ import { net, myTeam, isMode } from "./net/bus.js";
 import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
 import { TEAM, MODES } from "./net/teams.js";
 import { PLANES } from "./constants.js";
+import { useMap } from "./maps.js";
 import { initLobby, matchEnded, rematch, leave } from "./net/lobby.js";
 import { initScoreboard, soloOver, renderGroup } from "./scoreboard.js";
 
@@ -135,6 +143,9 @@ function stepPlane(d, quiet = false) {
 
 export function startGame(m) {
   game.mode = m;
+  // The map: a match's, else the player's; Classic is always the
+  // Countryside, the prototype's.
+  useMap(net.on ? net.map : m === "classic" ? "field" : opt.map);
   sfx.init();
   sfx.resume();
   document.body.dataset.mode = game.mode;
@@ -269,6 +280,7 @@ function startMatch({ speed }) {
   if (ownSpeed === null) ownSpeed = opt.speed;
   setSpeed(speed, false);
   clearRemotes();
+  useMap(net.map);
   buildFields(net.teams);
   P.ghost = false;
   wear(myTeam());
@@ -344,6 +356,7 @@ function overScreen(match) {
 function toTitle() {
   net.on = false;
   net.mode = null;
+  net.map = "field";
   net.seat = null;
   net.teams = 0;
   net.roster.clear();
@@ -352,6 +365,7 @@ function toTitle() {
   ownSpeed = null;
   clearRemotes();
   clearFields();
+  useMap(opt.map);
   P.ghost = false;
   wear(-1);
   clearMissiles();
@@ -381,6 +395,23 @@ function toTitle() {
   $("hud").classList.add("off");
   $("touchui").classList.add("hidden");
   $("title").classList.remove("hidden");
+}
+
+// ── Maps ────────────────────────────────────────────────────────────────────
+// The map for Free flight (and the organiser's first offer in a team game),
+// remembered. The title screen shows it behind the menu straight away.
+function setMap(id, persist = true) {
+  if (!MAPS[id]) return;
+  opt.map = id;
+  if (persist)
+    try {
+      window.localStorage.setItem(MAP_KEY, id);
+    } catch {
+      // No storage: the choice lasts the session.
+    }
+  for (const b of document.querySelectorAll("[data-map]"))
+    b.classList.toggle("on", b.dataset.map === id);
+  if (game.state === "title") useMap(id);
 }
 
 // ── Game speed ──────────────────────────────────────────────────────────────
@@ -472,12 +503,19 @@ function initUI() {
   });
   for (const id of ["menu", "oMenu"]) $(id).addEventListener("click", toMenu);
   $("oAgain").addEventListener("click", rematch);
-  // The runway's plane picker: a card each.
   // The runway's plane picker: ‹ and › step through the types.
   $("pPrev").addEventListener("click", () => stepPlane(-1));
   $("pNext").addEventListener("click", () => stepPlane(1));
   $("oLeave").addEventListener("click", leave);
-  initLobby({ startMatch, toTitle, speed: () => opt.speed });
+  initLobby({
+    startMatch,
+    toTitle,
+    speed: () => opt.speed,
+    map: () => opt.map,
+  });
+  for (const b of document.querySelectorAll("[data-map]"))
+    b.addEventListener("click", () => setMap(b.dataset.map));
+  setMap(opt.map, false);
   initScoreboard();
   $("bMute").addEventListener("click", () => {
     sfx.init();

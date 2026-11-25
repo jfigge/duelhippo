@@ -83,6 +83,7 @@ import {
   hippos,
   fields,
   onAnyField,
+  land,
 } from "./world.js";
 import { fire } from "./weapons.js";
 import { net, send, myTeam } from "./net/bus.js";
@@ -184,12 +185,15 @@ export function resetPlayer() {
       .filter((p) => p.team === myTeam())
       .map((p) => p.seat)
       .sort((a, b) => a - b);
-    P.pos.set(
-      P.base.x - 190 + Math.max(0, mates.indexOf(net.seat)) * 55,
-      GEAR,
-      P.base.z,
-    );
-  } else P.pos.set(HOME.x - 190, GEAR, 0);
+    const x =
+      P.base.x - P.base.hl + 40 + Math.max(0, mates.indexOf(net.seat)) * 55;
+    P.pos.set(x, groundY(x, P.base.z) + GEAR, P.base.z);
+  } else {
+    // 40 m from the runway's end (on the Countryside, x = −190 at y = GEAR,
+    // as the prototype has it; at sea, on the flight deck).
+    const x = HOME.x - HOME.hl + 40;
+    P.pos.set(x, groundY(x, 0) + GEAR, 0);
+  }
   P.th = 0;
   P.ph = P.phT = 0;
   qSide(P.q, 0, 0);
@@ -336,6 +340,14 @@ export function updPlayer(dt) {
       rotWorld(P.q, AY, s * 0.9 * dt);
       say("Edge of the map — turning back", 0.6);
     }
+    // The City's cloud ceiling is solid: near it the nose is pushed down,
+    // harder the closer the plane gets.
+    const under = land.ceil - 30;
+    if (land.ceil && !P.spin && P.pos.y > under && b.f.y > -0.2) {
+      const k = clamp((P.pos.y - under) / 30, 0.2, 1);
+      rotLocal(P.q, AX, -1.6 * k * Math.sign(b.u.y || 1) * dt);
+      say("Cloud ceiling — keep below it", 0.6);
+    }
     P.q.normalize();
   }
   b = basis(P.q, PB);
@@ -358,6 +370,7 @@ export function updPlayer(dt) {
   P.vel.y -= P.sink;
   P.pos.addScaledVector(P.vel, dt);
   if (game.mode === "classic") P.pos.z = 0;
+  if (land.ceil && P.pos.y > land.ceil) P.pos.y = land.ceil;
 
   // ── Ground contact: land, or crash ────────────────────────────────────────
   // "Home" is this plane's own runway: HOME, or its team's field.
@@ -399,8 +412,16 @@ export function updPlayer(dt) {
             ? "Spun in! Push, idle, opposite rudder to recover"
             : onRw
               ? `Too hard! Wings level, sink under ${Math.floor(pt.sink)} m/s`
-              : "Crashed — land on a runway",
+              : land.crash
+                ? land.crash(P.pos)
+                : "Crashed — land on a runway",
       );
+  }
+  // A flight deck has nothing round it: off its edge, a plane at flying
+  // speed flies on, and a slower one goes into the sea.
+  if (P.grounded && land.deck && !onRw) {
+    if (P.speed < pt.stall) return crash(P.pos, "Rolled off the deck");
+    P.grounded = false;
   }
   if (P.grounded) {
     if (game.mode !== "classic") {
@@ -409,7 +430,10 @@ export function updPlayer(dt) {
       P.q.setFromAxisAngle(AY, hd);
     }
     P.pos.y = gy;
-    P.speed = Math.max(0, P.speed - (onRw ? (P.thr < 0.05 ? 7 : 0.6) : 9) * dt);
+    P.speed = Math.max(
+      0,
+      P.speed - (onRw ? (P.thr < 0.05 ? land.brake : 0.6) : 9) * dt,
+    );
     if (!onRw && P.speed > 22) return crash(P.pos, "Ran off the runway");
     if (
       P.speed > pt.stall * 1.05 &&
@@ -426,7 +450,10 @@ export function updPlayer(dt) {
 
   // ── Obstacles ─────────────────────────────────────────────────────────────
   for (const t of targets)
-    if (P.pos.y < t.h + 1.5 && Math.hypot(P.pos.x - t.x, P.pos.z - t.z) < t.r)
+    if (
+      P.pos.y < t.y + t.h + 1.5 &&
+      Math.hypot(P.pos.x - t.x, P.pos.z - t.z) < t.r
+    )
       return crash(
         P.pos,
         t.alive
