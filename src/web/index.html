@@ -162,11 +162,21 @@
             ><button id="bScores" class="ghost">Scores</button
             ><button id="bInvert" class="ghost"><i>Pitch</i> normal</button
             ><button id="bSpeed" class="ghost"><i>Speed</i> 100%</button
-            ><button id="bMute" class="ghost"><i>Sound</i> on</button></span
+            ><button id="bMute" class="ghost"><i>Sound</i> on</button
+            ><button id="bAbout" class="ghost">About</button
+            ><button id="bUpdates" class="ghost hidden">
+              <i>Updates</i> manual
+            </button></span
           >
         </div>
       </div>
     </section>
+
+    <!-- The desktop app's update notes (scripts/updates.js). -->
+    <div id="upd" class="glass hidden" role="status">
+      <span></span
+      ><button id="updRestart" class="ghost hidden">Restart now</button>
+    </div>
 
     <section id="course" class="ov hidden">
       <div class="box">
@@ -407,6 +417,58 @@
           <span id="onLink"></span>
           <button id="onBack" class="ghost">Back</button>
         </div>
+      </div>
+    </section>
+
+    <!-- About (scripts/about.js): over whatever is showing, as in Rest Hippo
+         and Chip Hippo. -->
+    <section
+      id="about"
+      class="ov hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="About Duel Hippo"
+    >
+      <div class="box aboutCard">
+        <img class="aboutLogo" src="./favicon.svg" alt="" draggable="false" />
+        <div class="aboutName">
+          <h2>Duel Hippo</h2>
+          <button
+            id="aboutInfo"
+            class="aboutInfo"
+            aria-controls="aboutBuild"
+            aria-expanded="false"
+            aria-label="Version information"
+            title="Version information"
+          >
+            i
+          </button>
+          <div id="aboutBuild" class="aboutBuild" hidden></div>
+        </div>
+        <p class="aboutSub">A 3D biplane dogfighter</p>
+        <p class="aboutDesc">
+          Take off, shoot down the flyers, bomb their town and land before the
+          tank runs dry. Alone, or online with up to nine friends.
+        </p>
+        <p class="aboutLine aboutCredit">
+          <span>Created by Jason, coded by Claude</span
+          ><span class="aboutDot" aria-hidden="true">·</span
+          ><span>Copyright © 2026 Jason Figge</span>
+        </p>
+        <p class="aboutLine aboutSupport">
+          <span
+            ><span class="aboutLabel">Support:</span>
+            <a href="mailto:hippoherd@gmail.com">hippoherd@gmail.com</a></span
+          ><span id="aboutDonateDot" class="aboutDot" aria-hidden="true">·</span
+          ><a
+            id="aboutDonate"
+            href="https://github.com/sponsors/jfigge"
+            target="_blank"
+            rel="noopener noreferrer"
+            ><span aria-hidden="true">♥</span> Sponsor Duel Hippo…</a
+          >
+        </p>
+        <button id="aboutClose" class="ghost">Close</button>
       </div>
     </section>
 

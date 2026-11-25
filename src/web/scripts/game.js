@@ -95,6 +95,7 @@ import {
 import { player } from "./scores.js";
 import { initLobby, matchEnded, rematch, leave } from "./net/lobby.js";
 import { initScoreboard, soloOver, renderGroup } from "./scoreboard.js";
+import { bindAbout } from "./about.js";
 
 let renderer = null;
 
@@ -675,6 +676,13 @@ function initUI() {
   $("ctBack").addEventListener("click", () => {
     $("controls").classList.add("hidden");
     $("title").classList.remove("hidden");
+  });
+  // About opens over any screen; one from the desktop menu mid-game pauses
+  // it first (a match carries on, as for its menu).
+  bindAbout({
+    beforeOpen: () => {
+      if (game.state === "play") setPause(true);
+    },
   });
   $("oAgain").addEventListener("click", rematch);
   // The runway's plane picker: ‹ and › step through the types.

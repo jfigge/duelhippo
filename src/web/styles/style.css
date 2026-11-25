@@ -1234,3 +1234,150 @@ body.touch .tk {
 .board .me {
   text-decoration: underline;
 }
+
+/* The desktop app's update notes (scripts/updates.js): over everything, in
+   the corner the title screen leaves empty. The Restart note waits for the
+   title, so it never covers a game in progress. */
+#upd {
+  position: fixed;
+  left: calc(12px + var(--sl));
+  bottom: calc(12px + var(--sb));
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(460px, calc(100% - 24px));
+  padding: 8px 8px 8px 14px;
+  color: var(--ink);
+  font: 600 13px/1.4 var(--sans);
+}
+#upd:not(.ready) {
+  padding-right: 14px;
+}
+body:has(#title.hidden) #upd.ready {
+  display: none;
+}
+
+/* About (scripts/about.js), laid out as Rest Hippo's and Chip Hippo's card:
+   logo, name with its (i), subtitle, description, the two footer lines and
+   Close. It opens over any screen, so its backdrop hides what is behind. */
+#about {
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.72);
+}
+.aboutCard {
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  user-select: none;
+}
+.aboutLogo {
+  width: 112px;
+  height: 112px;
+  margin-bottom: 6px;
+}
+.aboutName {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.aboutName h2 {
+  margin: 0;
+  font-size: 28px;
+  color: var(--cy);
+}
+.aboutInfo {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--cy);
+  border-radius: 50%;
+  background: none;
+  color: var(--cy);
+  font: 700 11px/1 var(--mono);
+}
+.aboutInfo:hover,
+.aboutInfo[aria-expanded="true"] {
+  background: var(--cy);
+  color: #08101a;
+}
+/* Floats under the name, so opening it does not reflow the card. */
+.aboutBuild {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 240px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(16, 20, 40, 0.98);
+  border: 1px solid var(--line);
+  font: 12px/1.4 var(--mono);
+  white-space: nowrap;
+  text-align: left;
+}
+.aboutBuild[hidden] {
+  display: none;
+}
+.aboutBuild div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+.aboutBuild span {
+  color: var(--dim);
+}
+.aboutBuild b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.box p.aboutSub {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+}
+.box p.aboutDesc {
+  margin: 0;
+  color: var(--dim);
+  font-size: 14px;
+}
+/* Each line wraps between its items, never inside one. */
+.box p.aboutLine {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+.aboutSupport {
+  /* The address is the one thing on the card worth selecting. */
+  user-select: text;
+}
+.aboutLabel {
+  margin-right: 4px;
+}
+.aboutLine a {
+  color: var(--cy);
+  text-decoration: none;
+}
+.aboutLine a:hover,
+.aboutLine a:focus-visible {
+  text-decoration: underline;
+}
+#aboutClose {
+  margin-top: 12px;
+  min-width: 120px;
+}

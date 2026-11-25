@@ -48,11 +48,22 @@
       "package.json"
     ],
     "npmRebuild": false,
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "jfigge",
+      "repo": "duelhippo"
+    },
     "mac": {
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "arm64",
             "x64"
@@ -93,5 +104,8 @@
     "nsis": {
       "artifactName": "Duel-Hippo-Setup-${version}-${arch}.${ext}"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.12"
   }
 }

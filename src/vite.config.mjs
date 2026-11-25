@@ -8,8 +8,15 @@
 
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
+
+// The About card's version (web/scripts/about.js), the same in every shell.
+// Vite loads VITE_* variables after this file runs, so setting it here works.
+process.env.VITE_APP_VERSION = JSON.parse(
+  readFileSync(here("./package.json"), "utf8"),
+).version;
 
 export default defineConfig({
   root: here("./web"),

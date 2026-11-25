@@ -19,20 +19,35 @@
 
 // preload.js — the one bridge between the sandboxed game page and Electron.
 //
-// The game needs nothing from Node or the OS today; this only tells the page
-// it is running in the desktop shell (web/scripts/platform.js reads it). New
-// capabilities go here as narrow, named functions — never a raw ipcRenderer.
-// A sandboxed preload may require only Electron's own modules.
+// It tells the page it is running in the desktop shell (web/scripts/
+// platform.js reads it), and carries the auto-updater (app/updater.js) both
+// ways. New capabilities go here as narrow, named functions — never a raw
+// ipcRenderer. A sandboxed preload may require only Electron's own modules.
 
 "use strict";
 
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("duelhippo", {
   platform: "electron",
   os: process.platform,
+  arch: process.arch,
   versions: {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
+  },
+  // web/scripts/updates.js is the one user. A callback through the bridge,
+  // not a re-dispatched DOM event: the bridge copies the payload into the
+  // page's world, which a CustomEvent's detail cannot be relied on to cross.
+  // The menu's About Duel Hippo (web/scripts/about.js opens the card).
+  onAbout: (fn) => {
+    ipcRenderer.on("menu:about", () => fn());
+  },
+  updater: {
+    check: (manual) => ipcRenderer.invoke("updater:check", manual === true),
+    install: () => ipcRenderer.invoke("updater:install"),
+    onEvent: (fn) => {
+      ipcRenderer.on("updater", (_e, ev) => fn(ev));
+    },
   },
 });

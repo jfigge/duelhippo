@@ -154,6 +154,11 @@ Rules that follow from this:
   ring; pure), `config`
 - `game`: flow, update and boot
 - `main`: the browser entry point
+- `about`: the About card, after Rest Hippo's and Chip Hippo's; the title's
+  About button and the desktop menu open it, and it pauses a game under it.
+  The sponsor link is left off on iOS (App Store Guideline 3.1.1)
+- `updates`: the desktop app's update notes and its Updates button; bound
+  from `main.js`, never `game.js`, and inert without the preload's bridge
 - `platform`: shell detection
 
 The simulation modules post messages through `msg.js`, not `hud.js`. This
@@ -191,6 +196,17 @@ passed to `bindInput()`, so it imports nothing it controls.
   - A workflow-dispatch run must never publish anything.
   - Run `actionlint` on workflow changes. A YAML parser alone missed a
     duplicated `on:` once, and GitHub rejected the whole file.
+- **Auto-update** (desktop only). `src/app/updater.js` wraps
+  electron-updater, as in Rest Hippo and Volt Hippo. It reads the feed that
+  each GitHub Release carries (`latest*.yml`, the `.blockmap`s, and the
+  macOS `.zip`, which the updater installs there), so release.yml must keep
+  uploading them. A downloaded update installs when the game quits, or when
+  the player clicks Restart; it never restarts by itself. The automatic
+  check is off until the player turns it on from the title screen, and Help ▸
+  Check for Updates… always works. While the version is 0.x, releases are
+  pre-releases, so the updater follows pre-releases (`prereleaseAllowed`);
+  from 1.0 it takes stable releases only. On macOS, updates need the signed
+  build. Tested in `app/tests/updater.test.js` and `updates.test.js`.
 - **The website.** `make site` copies `src/www` into
   `../hippoherd/website/duelhippo/`. It leaves `about/` alone, because
   hippoherd generates that page.

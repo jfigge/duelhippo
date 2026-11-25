@@ -138,6 +138,11 @@ export const SPEED_KEY = "duelhippo.speed";
 // Inverted pitch (the prototype's I key), remembered between sessions.
 export const INVERT_KEY = "duelhippo.invert";
 
+// The desktop app's automatic update check (updates.js): "1" for on. Off
+// unless the player turns it on, as in the other hippos; Help ▸ Check for
+// Updates… works either way.
+export const UPDATES_KEY = "duelhippo.updates";
+
 // Auto-level: let go of the touch stick and the plane eases back to straight
 // and level flight. Not part of the prototype, and keyboard play never uses
 // it. Each axis corrects in proportion to its error (gain, per second),

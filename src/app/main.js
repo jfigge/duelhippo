@@ -34,13 +34,23 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, Menu, net, protocol, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  net,
+  protocol,
+  shell,
+} = require("electron");
 const { parseArgs } = require("./cli-args");
+const updater = require("./updater");
 
 const args = parseArgs(process.argv);
 const isDev = !!args.devUrl;
 const WWW = path.join(__dirname, "..", "www");
 const APP_ORIGIN = "app://duelhippo";
+let mainWin = null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -71,12 +81,46 @@ function buildMenu() {
       { role: "toggleDevTools" },
       { type: "separator" },
     );
+  // About is the page's own card (web/scripts/about.js), as in Rest Hippo
+  // and Chip Hippo, not Electron's native panel: on macOS it replaces the
+  // app menu's About, elsewhere it goes in Help.
+  const about = {
+    label: "About Duel Hippo",
+    click: () => {
+      if (mainWin && !mainWin.isDestroyed())
+        mainWin.webContents.send("menu:about");
+    },
+  };
+  // The answer comes back on the updater channel, whoever asked.
+  const updates = {
+    label: "Check for Updates…",
+    click: () => updater.checkForUpdates({ manual: true }),
+  };
   const template = [
     ...(isMac
-      ? [{ role: "appMenu" }]
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              about,
+              { type: "separator" },
+              { role: "services" },
+              { type: "separator" },
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              { type: "separator" },
+              { role: "quit" },
+            ],
+          },
+        ]
       : [{ label: "File", submenu: [{ role: "quit" }] }]),
     { label: "View", submenu: view },
     { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: isMac ? [updates] : [updates, { type: "separator" }, about],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -100,9 +144,11 @@ function createWindow() {
   win.once("ready-to-show", () => win.show());
 
   // The game never navigates and never opens windows; links go to the
-  // system browser.
+  // system browser, and the About card's support address to the mail app.
   win.webContents.on("will-navigate", (e, url) => {
-    if (!url.startsWith(isDev ? args.devUrl : APP_ORIGIN)) e.preventDefault();
+    if (url.startsWith(isDev ? args.devUrl : APP_ORIGIN)) return;
+    e.preventDefault();
+    if (/^mailto:/.test(url)) shell.openExternal(url);
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
@@ -122,6 +168,10 @@ function createWindow() {
     win.loadURL(`${APP_ORIGIN}/index.html`);
   }
   if (args.devTools) win.webContents.openDevTools({ mode: "detach" });
+  mainWin = win;
+  win.on("closed", () => {
+    if (mainWin === win) mainWin = null;
+  });
   return win;
 }
 
@@ -143,6 +193,14 @@ else {
     }
     serveWww();
     buildMenu();
+    // The page asks for its startup check itself, ten seconds in, if the
+    // player has turned automatic checks on: the setting is the page's, kept
+    // in localStorage with the game's other options.
+    updater.initUpdater(() => mainWin);
+    ipcMain.handle("updater:check", (_e, manual) => {
+      updater.checkForUpdates({ manual: manual === true });
+    });
+    ipcMain.handle("updater:install", () => updater.quitAndInstall());
     createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

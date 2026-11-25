@@ -28,6 +28,7 @@ import "../styles/style.css";
 import * as THREE from "three";
 import "./platform.js";
 import { boot } from "./game.js";
+import { bindUpdates } from "./updates.js";
 
 boot({
   createRenderer: () =>
@@ -36,3 +37,4 @@ boot({
       powerPreference: "high-performance",
     }),
 });
+bindUpdates();
