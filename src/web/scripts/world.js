@@ -35,8 +35,10 @@ import { scene, M, box, put, flat } from "./scene.js";
 import { S } from "./state.js";
 import { puff, boom } from "./effects.js";
 import { say } from "./msg.js";
-// Imports nothing itself, so it cannot disturb the evaluation order above.
-import { net, send, isDuel, isCoop } from "./net/bus.js";
+// Neither imports a game module, so they cannot disturb the evaluation
+// order above.
+import { net, send, myTeam } from "./net/bus.js";
+import { TEAM, fieldSpots } from "./net/teams.js";
 
 export function groundY(x, z) {
   const d = Math.max(Math.abs(x - CX), Math.abs(z));
@@ -92,14 +94,14 @@ export const onRun = (p, R) =>
 }
 
 // ── Runways ─────────────────────────────────────────────────────────────────
-function runway(R, edge) {
-  put(scene, flat(R.hl * 2, R.hw * 2, 0x8d8371, -2), R.x, 0.05, R.z);
+function runway(R, edge, into = scene) {
+  put(into, flat(R.hl * 2, R.hw * 2, 0x8d8371, -2), R.x, 0.05, R.z);
   for (let x = -R.hl + 30; x < R.hl - 30; x += 32)
-    put(scene, flat(13, 1.2, 0xf4f1e6, -4), R.x + x, 0.06, R.z);
+    put(into, flat(13, 1.2, 0xf4f1e6, -4), R.x + x, 0.06, R.z);
   for (const s of [-1, 1])
     for (let i = 0; i < 5; i++)
       put(
-        scene,
+        into,
         flat(14, 2, 0xf4f1e6, -4),
         R.x + s * (R.hl - 12),
         0.06,
@@ -107,20 +109,20 @@ function runway(R, edge) {
       );
   for (let x = -R.hl; x <= R.hl; x += 46)
     for (const s of [-1, 1])
-      put(scene, box(1, 0.7, 1, edge), R.x + x, 0.35, R.z + s * (R.hw + 1.5));
+      put(into, box(1, 0.7, 1, edge), R.x + x, 0.35, R.z + s * (R.hw + 1.5));
 }
 runway(HOME, 0x55ffff);
 runway(EB, 0xff55ff);
 
 // ── Solids you can fly into (free mode reaches the off-lane buildings) ──────
 export const solids = [];
-function hangar(x, z, roof, solid = true) {
+function hangar(x, z, roof, solid = true, into = scene) {
   const g = new THREE.Group();
   put(g, box(30, 10, 24, 0x8a6e52), 0, 5, 0);
   put(g, box(32, 2.4, 26, roof), 0, 11.2, 0);
   put(g, box(16, 8, 0.4, 0x3b2c22), 0, 4, 12.1);
   g.position.set(x, 0, z);
-  scene.add(g);
+  into.add(g);
   if (solid) solids.push({ x, z, r: 17, h: 12.5 });
   return g;
 }
@@ -156,6 +158,8 @@ function hangar(x, z, roof, solid = true) {
 }
 
 // ── Trees (instanced) and clouds ────────────────────────────────────────────
+// Where each tree stands, so a team game can clear its airfields (below).
+const trees = { crown: null, trunk: null, at: [], hidden: [] };
 {
   const N = 900,
     crown = new THREE.InstancedMesh(
@@ -197,11 +201,14 @@ function hangar(x, z, roof, solid = true) {
       crown.setMatrixAt(i, m);
       m.compose(p.set(x, y + 1.5 * sc, z), q, s.set(sc, sc, sc));
       trunk.setMatrixAt(i, m);
+      trees.at.push(x, z);
       i++;
     }
   }
   crown.count = trunk.count = i;
   scene.add(crown, trunk);
+  trees.crown = crown;
+  trees.trunk = trunk;
 
   const cm = new THREE.MeshLambertMaterial({
     color: 0xffffff,
@@ -262,6 +269,15 @@ export function makePlane(body, wing, trim, dark) {
   g.userData.prop = put(g, box(0.22, 2.8, 0.08, 0x6b4a2a), 0, 0, -4.0);
   return g;
 }
+// A player out of planes in Endless enemies flies a see-through ghost.
+export function ghostly(obj, on) {
+  obj.traverse((o) => {
+    if (!o.material) return;
+    o.material.transparent = on;
+    o.material.opacity = on ? 0.35 : 1;
+    o.material.depthWrite = !on;
+  });
+}
 export function blob() {
   const m = new THREE.Mesh(
     new THREE.CircleGeometry(5, 16),
@@ -287,10 +303,21 @@ export function syncShadow(sh, pos, on) {
 
 // ── The enemy town ──────────────────────────────────────────────────────────
 export const targets = [];
-function makeTarget(kind, x, side) {
+function makeTarget(kind, x, side, z = 0) {
   const g = new THREE.Group();
   let r, h, hp, pts, name;
-  if (kind === "hangar") {
+  if (kind === "flag") {
+    // A team's flag (Bomb the flag): three bombs, or a long burst of fire.
+    const c = TEAM[side % TEAM.length];
+    put(g, box(6, 1.2, 6, 0x6b6150), 0, 0.6, 0);
+    put(g, box(0.5, 18, 0.5, 0xeeeeee), 0, 9, 0);
+    put(g, box(7, 4.2, 0.2, c.plane[2]), 3.6, 15.6, 0);
+    r = 9;
+    h = 18;
+    hp = 36;
+    pts = 500;
+    name = c.name + " flag";
+  } else if (kind === "hangar") {
     put(g, box(30, 10, 24, 0x8a6e52), 0, 5, 0);
     put(g, box(32, 2.4, 26, 0xb03aa0), 0, 11.2, 0);
     r = 17;
@@ -338,21 +365,14 @@ function makeTarget(kind, x, side) {
     pts = 250;
     name = "Headquarters";
   }
-  g.position.set(x, 0, 0);
-  // A duel's host town wears the player's cyan where the enemy's is magenta.
-  if (side === "host")
-    g.traverse((o) => {
-      const c = o.material && o.material.color;
-      if (c && c.getHex() === 0xb03aa0) c.setHex(0x2fc6d6);
-      if (c && c.getHex() === 0xff55ff) c.setHex(0x55ffff);
-    });
+  g.position.set(x, 0, z);
   scene.add(g);
   return {
     g,
     kind,
     name,
     x,
-    z: 0,
+    z,
     r,
     h,
     hp,
@@ -362,20 +382,12 @@ function makeTarget(kind, x, side) {
     side,
   };
 }
-// `defs` is TDEF in a one-player game; a duel passes DUEL_TDEF, whose
-// entries carry the side that owns each building.
+// `defs` is TDEF in a one-player game (and Endless enemies). Bomb the flag
+// passes one [kind, x, team, z] per team (flagDefs).
 export function buildTargets(defs = TDEF) {
   for (const t of targets) scene.remove(t.g);
   targets.length = 0;
-  for (const d of defs) targets.push(makeTarget(d[0], d[1], d[2]));
-}
-// A duel rebuilds one side's town; the other side's stands as it is.
-export function rebuildSide(side, defs) {
-  defs.forEach((d, i) => {
-    if (d[2] !== side) return;
-    scene.remove(targets[i].g);
-    targets[i] = makeTarget(d[0], d[1], d[2]);
-  });
+  for (const d of defs) targets.push(makeTarget(d[0], d[1], d[2], d[3]));
 }
 function wreck(t) {
   t.alive = false;
@@ -387,15 +399,18 @@ function wreck(t) {
 }
 export function hurtTarget(t, n, pos) {
   if (!t.alive) return;
+  // A team's own flag, with friendly fire off.
+  if (net.on && !net.ff && t.side === myTeam()) return;
   t.hp -= n;
-  // In a match, whoever does the damage reports it (net/protocol.js "tg").
-  if (net.on) send({ t: "tg", i: targets.indexOf(t), hp: t.hp });
+  // In a match, whoever does the damage reports it (net/protocol.js "tg"),
+  // as an amount, so two bombers' hits add up on every machine.
+  if (net.on) send({ t: "tg", i: targets.indexOf(t), d: n });
   if (t.hp > 0) {
     puff(pos, 0xffd27a, 3, 8, 0.8, 0.35, 2);
     return;
   }
   wreck(t);
-  if (isDuel()) return duelWreck(t, true);
+  if (net.on) return teamWreck(t, true);
   S.score += t.pts;
   say(t.name + " destroyed  +" + t.pts, 1.8);
   if (targets.every((t) => !t.alive)) {
@@ -405,37 +420,105 @@ export function hurtTarget(t, n, pos) {
     S.rebuildT = 30;
   }
 }
-// The other player's damage to a building, as they reported it. It scores
-// on their side, not here.
-export function applyTarget(i, hp) {
+// Another player's damage to a building, as they reported it. It scores
+// for them, not here.
+export function applyTarget(i, d) {
   const t = targets[i];
-  if (!t || !t.alive || !Number.isFinite(hp)) return;
-  t.hp = Math.min(t.hp, hp);
+  if (!t || !t.alive || !Number.isFinite(d) || d <= 0) return;
+  t.hp -= d;
   if (t.hp > 0) return;
   wreck(t);
-  if (isDuel()) return duelWreck(t, false);
-  say(t.name + " destroyed by your wingman", 1.8);
-  if (isCoop() && targets.every((t) => !t.alive)) {
-    S.wave++;
-    say("Enemy town flattened!", 4);
-    S.rebuildT = 30;
-  }
+  teamWreck(t, false);
 }
-// A duel building down: points only for the other side's buildings, and a
-// town bonus, then a rebuild, when the last of a side's buildings falls.
-// S.rebuild holds a timer per side (net/match.js runs it).
-function duelWreck(t, byMe) {
-  const mine = t.side === net.role;
-  if (byMe && !mine) {
+// A building down in a team game. A flag takes its team out of Bomb the flag
+// (net/match.js hears of it through net.onFlag); the town, in Endless
+// enemies, scores for whoever flattened it and rebuilds when it is all gone.
+function teamWreck(t, byMe) {
+  if (t.kind === "flag") {
+    const mine = t.side === myTeam();
+    if (byMe && !mine) {
+      S.score += t.pts;
+      say(t.name + " down!  +" + t.pts, 2.5);
+    } else say(mine ? "Your flag is down!" : t.name + " is down", 2.5);
+    if (net.onFlag) net.onFlag(t.side);
+    return;
+  }
+  if (byMe) {
     S.score += t.pts;
     say(t.name + " destroyed  +" + t.pts, 1.8);
-  } else if (mine) say("Your " + t.name.toLowerCase() + " was destroyed!", 1.8);
-  if (targets.some((u) => u.side === t.side && u.alive)) return;
-  if (byMe && !mine) {
+  }
+  if (targets.some((u) => u.alive)) return;
+  if (byMe) {
     S.score += 1000;
-    say("Their town flattened!  +1000", 4);
-  } else if (mine) say("Your town is flattened! It rebuilds in 30 s", 4);
-  S.rebuild[t.side] = 30;
+    say("Enemy town flattened!  +1000", 4);
+  } else say("Enemy town flattened!", 4);
+  S.rebuildT = 30;
+}
+
+// ── Team airfields ──────────────────────────────────────────────────────────
+// One per team, round a ring (net/teams.js fieldSpots), each with a runway
+// edged in the team's colour and a hangar. Trees on the new runways are put
+// away while a match lasts.
+export const fields = [];
+let fieldSolids = [];
+
+export function buildFields(n) {
+  clearFields();
+  fieldSpots(n).forEach(({ x, z }, team) => {
+    const c = TEAM[team % TEAM.length];
+    const f = { x, z, hl: 230, hw: 18, team, g: new THREE.Group() };
+    runway({ x: 0, z: 0, hl: f.hl, hw: f.hw }, c.plane[2], f.g);
+    hangar(-120, -70, c.plane[1], false, f.g);
+    f.g.position.set(x, 0, z);
+    scene.add(f.g);
+    fieldSolids.push({ x: x - 120, z: z - 70, r: 17, h: 12.5 });
+    fields.push(f);
+  });
+  solids.push(...fieldSolids);
+  hideTrees((x, z) =>
+    fields.some(
+      (f) => Math.abs(x - f.x) < f.hl + 70 && Math.abs(z - f.z) < 110,
+    ),
+  );
+}
+
+export function clearFields() {
+  for (const f of fields) scene.remove(f.g);
+  fields.length = 0;
+  for (const s of fieldSolids) {
+    const i = solids.indexOf(s);
+    if (i >= 0) solids.splice(i, 1);
+  }
+  fieldSolids = [];
+  hideTrees(() => false);
+}
+
+// A team's flag stands beside its runway, clear of the planes' path.
+export const flagDefs = () =>
+  fields.map((f) => ["flag", f.x + 60, f.team, f.z + 70]);
+
+export const onAnyField = (p) =>
+  fields.some((f) => onRun(p, f)) || onRun(p, HOME) || onRun(p, EB);
+
+const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+function hideTrees(hide) {
+  const { crown, trunk, at } = trees;
+  if (!crown) return;
+  for (const [i, m] of trees.hidden) {
+    crown.setMatrixAt(i, m.crown);
+    trunk.setMatrixAt(i, m.trunk);
+  }
+  trees.hidden = [];
+  for (let i = 0; i < crown.count; i++) {
+    if (!hide(at[i * 2], at[i * 2 + 1])) continue;
+    const m = { crown: new THREE.Matrix4(), trunk: new THREE.Matrix4() };
+    crown.getMatrixAt(i, m.crown);
+    trunk.getMatrixAt(i, m.trunk);
+    trees.hidden.push([i, m]);
+    crown.setMatrixAt(i, zero);
+    trunk.setMatrixAt(i, zero);
+  }
+  crown.instanceMatrix.needsUpdate = trunk.instanceMatrix.needsUpdate = true;
 }
 // Factory chimneys smoke while the factory stands.
 export function updTown(dt) {

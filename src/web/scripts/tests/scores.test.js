@@ -38,10 +38,10 @@ const A = "a".repeat(64),
 const match = (id, at, sa, sb, w = null) => ({
   id,
   at,
-  m: "classic",
+  m: "free",
   p: [
-    [A, "Ann", sa],
-    [B, "Bo", sb],
+    [A, "Ann", sa, 0],
+    [B, "Bo", sb, 1],
   ],
   w,
 });
@@ -74,7 +74,7 @@ test("a group is the same group whoever lists it first", () => {
 test("two copies merge: each match once, best first, ten at most", () => {
   const mine = [match("m1", 1, 500, 200), match("m2", 2, 100, 100)];
   const theirs = [match("m1", 1, 400, 350), match("m3", 3, 900, 0)];
-  const merged = mergeLists("duel", mine, theirs, [A, B]);
+  const merged = mergeLists("dogfight", mine, theirs, [A, B]);
   assert.deepEqual(
     merged.map((e) => e.id),
     ["m3", "m1", "m2"],
@@ -85,43 +85,57 @@ test("two copies merge: each match once, best first, ten at most", () => {
     [500, 350],
   );
   const many = Array.from({ length: 14 }, (_, i) => match("x" + i, i, i, 0));
-  assert.equal(mergeLists("duel", many, [], [A, B]).length, 10);
+  assert.equal(mergeLists("dogfight", many, [], [A, B]).length, 10);
 });
 
-test("co-op ranks by the team's total; duels by the best single score", () => {
-  const list = [match("solo-star", 1, 900, 0), match("team", 2, 500, 500)];
-  assert.equal(mergeLists("coop", list, [], [A, B])[0].id, "team");
-  assert.equal(mergeLists("duel", list, [], [A, B])[0].id, "solo-star");
+test("team modes rank by the best team's total; dogfights by the best single score", () => {
+  const pair = (id, at, a, b, c) => ({
+    id,
+    at,
+    m: "free",
+    p: [
+      [A, "Ann", a, 0],
+      [B, "Bo", b, 0],
+      [C, "Cy", c, 1],
+    ],
+    w: 0,
+  });
+  const list = [pair("star", 1, 900, 0, 0), pair("team", 2, 600, 600, 0)];
+  for (const m of ["flag", "endless"])
+    assert.equal(mergeLists(m, list, [], [A, B, C])[0].id, "team", m);
+  assert.equal(mergeLists("dogfight", list, [], [A, B, C])[0].id, "star");
 });
 
 test("a peer's copy cannot smuggle in strangers or nonsense", () => {
+  const with_ = (id, p) => ({ ...match(id, 1, 10, 10), p });
   const bad = [
-    {
-      ...match("y1", 1, 10, 10),
-      p: [
-        [A, "Ann", 10],
-        [C, "Cy", 10],
-      ],
-    },
-    { ...match("y2", 1, 10, 10), p: [[A, "Ann", 10]] },
+    with_("y1", [
+      [A, "Ann", 10, 0],
+      [C, "Cy", 10, 1],
+    ]),
+    with_("y2", [[A, "Ann", 10, 0]]),
+    with_("y6", [
+      [A, "Ann", 10, 0],
+      [B, "Bo", 10, 9],
+    ]),
     match("y3", 1, -5, 10),
     match("y4", 1, 1.5, 10),
     { ...match("y5", 1, 10, 10), m: "god" },
-    { ...match("<script>", 1, 10, 10) },
+    match("<script>", 1, 10, 10),
     null,
     "junk",
   ];
-  assert.deepEqual(mergeLists("duel", [], bad, [A, B]), []);
+  assert.deepEqual(mergeLists("dogfight", [], bad, [A, B]), []);
   const named = mergeLists(
-    "duel",
+    "dogfight",
     [],
     [
       {
-        ...match("z", 1, 10, 10),
-        p: [
-          [A, "<b>x</b>", 10],
-          [B, "", 10],
-        ],
+        ...with_("z", [
+          [A, "<b>x</b>", 10, 0],
+          [B, "", 10, 1],
+        ]),
+        w: 7,
       },
     ],
     [A, B],
@@ -130,4 +144,5 @@ test("a peer's copy cannot smuggle in strangers or nonsense", () => {
     named[0].p.map((p) => p[1]),
     ["bxb", "Pilot"],
   );
+  assert.equal(named[0].w, null, "no team 7 played");
 });

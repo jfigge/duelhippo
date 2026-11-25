@@ -23,6 +23,11 @@
 // distance / 440 s) and patrol over their own airfield otherwise. Turn rate
 // rises with the wave and the player's kills; they fire bursts of 8 when the
 // player is inside 420 m and ~10° of the nose (DESIGN.md, "Enemies").
+//
+// Endless enemies (a team game): each player's machine flies one flyer, the
+// one at its own seat's index, which hunts whichever plane is nearest and
+// comes back a few seconds after it is shot down. The others are drawn from
+// their owners' state updates (net/match.js).
 
 import {
   V,
@@ -46,14 +51,16 @@ import { sfx } from "./audio.js";
 import { puff, boom } from "./effects.js";
 import { say } from "./msg.js";
 import { groundY, makePlane, blob, syncShadow } from "./world.js";
+import { CX } from "./constants.js";
 import { P, crash } from "./flight.js";
 import { fire } from "./weapons.js";
-import { R } from "./remote.js";
-import { isHost, isCoop, send } from "./net/bus.js";
+import { solidRemotes } from "./remote.js";
+import { net, send } from "./net/bus.js";
 import { v3, unit3 } from "./net/protocol.js";
 
 export const enemies = [];
-for (let i = 0; i < 6; i++) {
+for (let i = 0; i < 6; i++) addEnemy(i);
+function addEnemy(i) {
   const o = makePlane(0x3a2a40, 0xe055d0, 0xff55ff, 0x7a1f70);
   o.visible = false;
   scene.add(o);
@@ -77,6 +84,15 @@ for (let i = 0; i < 6; i++) {
   });
 }
 
+// Endless enemies has one flyer per seat, up to nine.
+export function ensureEnemies(n) {
+  while (enemies.length < n) addEnemy(enemies.length);
+}
+
+// Whose machine decides what happens to a flyer: this one's, except in a
+// team game, where each machine owns the flyer at its seat.
+export const ownsEnemy = (e) => !net.on || enemies.indexOf(e) === net.seat;
+
 export function spawnEnemy() {
   const e = enemies.find((e) => !e.alive);
   if (!e) return;
@@ -99,10 +115,13 @@ export function spawnEnemy() {
   e.obj.visible = true;
 }
 
-// `by` says who gets the kill in co-op, and the host tells the guest; in a
-// one-player game it is just whether the player scored.
-export function killEnemy(e, scored, by = scored ? "host" : null) {
-  if (isHost()) send({ t: "ek", i: enemies.indexOf(e), by });
+// In a one-player game `scored` is just whether the player scored. In a team
+// game the owner tells everyone, and `by` is the seat that gets the kill.
+export function killEnemy(e, scored, by = scored && net.on ? net.seat : null) {
+  if (net.on && ownsEnemy(e)) {
+    send({ t: "ek", i: enemies.indexOf(e), by });
+    e.respawnT = 4;
+  }
   boom(e.pos, false);
   e.alive = false;
   e.obj.visible = false;
@@ -116,12 +135,41 @@ export function killEnemy(e, scored, by = scored ? "host" : null) {
 
 const EB_ = basis(new Q());
 
-// Who a flyer hunts: the player — or, on a co-op host, whichever of the two
-// planes in the air is nearer.
+// Who a flyer hunts: the player — or, in a team game, whichever plane in the
+// air is nearest. Ghosts are not worth the bullets.
 function quarry(e) {
-  if (!isCoop() || !R.alive || R.grounded) return P;
-  if (!P.alive || P.grounded) return R;
-  return P.pos.distanceTo(e.pos) <= R.pos.distanceTo(e.pos) ? P : R;
+  if (!net.on) return P;
+  let best = P,
+    bd =
+      P.alive && !P.grounded && !P.ghost ? P.pos.distanceTo(e.pos) : Infinity;
+  for (const r of solidRemotes()) {
+    if (r.grounded) continue;
+    const d = r.pos.distanceTo(e.pos);
+    if (d < bd) {
+      bd = d;
+      best = r;
+    }
+  }
+  return best;
+}
+
+// Endless enemies: this machine's flyer, back in the air a few seconds after
+// it falls, somewhere over the middle of the map.
+export function hostEnemy(dt) {
+  const e = enemies[net.seat];
+  if (!e) return;
+  if (e.alive) return updEnemy(e, dt);
+  if ((e.respawnT = (e.respawnT ?? 0) - dt) > 0) return;
+  e.alive = true;
+  e.hp = 3;
+  e.speed = 58;
+  e.cd = 2;
+  e.burst = 0;
+  e.turn = 0.85;
+  e.pos.set(CX + rnd(-1200, 1200), rnd(260, 420), rnd(-1200, 1200));
+  e.up.set(0, 1, 0);
+  e.q.setFromAxisAngle(AY, rnd(0, 2 * PI));
+  e.obj.visible = true;
 }
 
 export function updEnemy(e, dt) {
@@ -201,8 +249,8 @@ export function updEnemy(e, dt) {
         )
         .normalize();
       fire(tv2.copy(e.pos).addScaledVector(b.f, 5), dir, e.speed + 380, "e");
-      // The guest's machine fires the same round, and judges its own hits.
-      if (isHost())
+      // The other machines fire the same round, and judge their own hits.
+      if (net.on)
         send({ t: "ef", o: v3(tv2), d: unit3(dir), s: e.speed + 380 });
       sfx.egun(camera.position.distanceTo(e.pos));
       e.burst++;
@@ -210,7 +258,7 @@ export function updEnemy(e, dt) {
     }
   }
   if (e.pos.y < groundY(e.pos.x, e.pos.z) + 2) return killEnemy(e, false);
-  if (P.alive && P.pos.distanceTo(e.pos) < 6.5) {
+  if (P.alive && !P.ghost && P.pos.distanceTo(e.pos) < 6.5) {
     killEnemy(e, true);
     return crash(P.pos, "Mid-air collision!");
   }

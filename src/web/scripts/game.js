@@ -28,7 +28,7 @@
 
 import * as THREE from "three";
 import { $ } from "./util.js";
-import { BEST_KEY, SPEEDS, SPEED_KEY, DUEL_TDEF } from "./constants.js";
+import { BEST_KEY, SPEEDS, SPEED_KEY } from "./constants.js";
 import { scene, camera } from "./scene.js";
 import { S, game, opt } from "./state.js";
 import { sfx } from "./audio.js";
@@ -41,16 +41,23 @@ import {
   hippos,
   updTown,
   updHippos,
+  buildFields,
+  clearFields,
+  flagDefs,
+  makePlane,
+  ghostly,
+  fields,
 } from "./world.js";
 import { P, resetPlayer, updPlayer, flip } from "./flight.js";
-import { enemies, spawnEnemy, updEnemy } from "./ai.js";
+import { enemies, spawnEnemy, updEnemy, hostEnemy } from "./ai.js";
 import { bullets, bombs, dropBomb, updBullets, updBombs } from "./weapons.js";
 import { isTouch, releaseKeys, bindInput } from "./input.js";
 import { updCamera } from "./camera.js";
 import { hud, initHud } from "./hud.js";
-import { R, resetRemote, hideRemote } from "./remote.js";
-import { net, isHost, isCoop, isDuel } from "./net/bus.js";
+import { remotes, clearRemotes, teamScores } from "./remote.js";
+import { net, myTeam, isMode } from "./net/bus.js";
 import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
+import { TEAM, MODES } from "./net/teams.js";
 import { initLobby, matchEnded, rematch, leave } from "./net/lobby.js";
 import { initScoreboard, soloOver, renderGroup } from "./scoreboard.js";
 
@@ -72,9 +79,10 @@ function update(dt) {
   }
   syncShadow(P.shadow, P.pos, P.alive);
 
-  // The AI flyers: a one-player game's, or a co-op host's. A duel has none,
-  // and a co-op guest draws the host's (net/match.js).
-  if (!net.on || (isHost() && isCoop())) {
+  // The AI flyers: a one-player game's. In Endless enemies each machine
+  // flies one, and draws the others' (net/match.js); the other team games
+  // have none.
+  if (!net.on) {
     const maxE = Math.min(5, 2 + Math.floor(S.kills / 4) + S.wave);
     S.spawnT -= dt;
     if (S.spawnT <= 0 && enemies.filter((e) => e.alive).length < maxE) {
@@ -82,7 +90,7 @@ function update(dt) {
       S.spawnT = 5;
     }
     for (const e of enemies) if (e.alive) updEnemy(e, dt);
-  }
+  } else if (isMode("endless")) hostEnemy(dt);
   if (S.rebuildT > 0 && (S.rebuildT -= dt) <= 0) {
     buildTargets();
     say("The enemy rebuilt their town!", 2.5);
@@ -105,7 +113,8 @@ export function startGame(m) {
     score: 0,
     kills: 0,
     wave: 0,
-    lives: 3,
+    // Bomb the flag: planes without end while the flag stands.
+    lives: isMode("flag") ? 99 : 3,
     rebuildT: 0,
     spawnT: 3,
   });
@@ -127,7 +136,11 @@ export function startGame(m) {
     h.alive = true;
     h.g.visible = true;
   }
-  buildTargets(isDuel() ? DUEL_TDEF : undefined);
+  // A team game's targets: the town for Endless enemies, the flags for Bomb
+  // the flag, nothing for a dogfight.
+  buildTargets(
+    !net.on || isMode("endless") ? undefined : isMode("flag") ? flagDefs() : [],
+  );
   resetPlayer();
   game.camZoom = 0;
   camera.position.set(P.pos.x, 20, 90);
@@ -137,13 +150,11 @@ export function startGame(m) {
   $("hud").classList.remove("off");
   $("touchui").classList.toggle("hidden", !isTouch);
   say(
-    isDuel()
-      ? "Take off, shoot your rival down and flatten their town"
-      : isCoop()
-        ? "Take off with your wingman and hit the magenta flyers' town"
-        : isTouch
-          ? "Push the throttle up, then pull back on the stick to lift off"
-          : "W to throttle up, then Down arrow to lift off",
+    net.on
+      ? INTRO[net.mode]
+      : isTouch
+        ? "Push the throttle up, then pull back on the stick to lift off"
+        : "W to throttle up, then Down arrow to lift off",
     4.5,
   );
   if (renderer) renderer.domElement.focus();
@@ -186,44 +197,86 @@ export function setPause(v) {
   if (v) releaseKeys();
 }
 
-// ── Two player ──────────────────────────────────────────────────────────────
-// The lobby (net/lobby.js) connects the two machines and calls startMatch
-// on both at once. The host's game speed is the match's; the player's own
-// setting is put back afterwards.
+// ── Team games ──────────────────────────────────────────────────────────────
+// The lobby (net/lobby.js) connects everyone and calls startMatch on every
+// machine at once. Team games are all Free flight. The organiser's game
+// speed is the match's; the player's own setting is put back afterwards, as
+// is the player's own plane.
 let ownSpeed = null;
+const ownPlane = P.obj;
+const teamPlanes = {};
 
-function startMatch({ kind, mode, speed }) {
-  net.on = true;
-  net.kind = kind;
-  if (ownSpeed === null) ownSpeed = opt.speed;
-  setSpeed(speed, false);
-  resetRemote(kind);
-  startGame(mode);
-  beginMatch(matchOver, showGroup);
-  $("hRivalLabel").textContent = kind === "duel" ? "RIVAL" : "WINGMAN";
-  $("hRivalRow").classList.remove("hidden");
-}
-
-const RESULT = {
-  won: "You win!",
-  lost: "You lost",
-  over: "Out of planes",
-  left: "Your friend left",
+const INTRO = {
+  dogfight: "Take off and shoot the other teams down. Last team flying wins",
+  flag: "Bomb the other teams' flags, and guard your own",
+  endless: "Shoot down the magenta flyers. The team with the most points wins",
 };
 
-function matchOver(result) {
+function startMatch({ speed }) {
+  net.on = true;
+  if (ownSpeed === null) ownSpeed = opt.speed;
+  setSpeed(speed, false);
+  clearRemotes();
+  buildFields(net.teams);
+  wearTeam(myTeam());
+  P.ghost = false;
+  startGame("free");
+  beginMatch(matchOver, showGroup);
+  $("hTeams").classList.remove("hidden");
+}
+
+// The player's plane in the team's colours (or back in its own, -1).
+function wearTeam(team) {
+  const next =
+    team < 0
+      ? ownPlane
+      : (teamPlanes[team] ??= makePlane(...TEAM[team % TEAM.length].plane));
+  if (next !== P.obj) {
+    P.obj.visible = next.visible = false;
+    if (!next.parent) ownPlane.parent.add(next);
+    P.obj = next;
+  }
+  ghostly(P.obj, false);
+}
+
+function matchOver({ result, winner, team }) {
   game.state = "over";
   P.obj.visible = false;
   overScreen(true);
-  $("oTitle").textContent = RESULT[result];
+  // Endless enemies counts everyone's final score before naming a winner.
+  if (result === "counting") {
+    $("oTitle").textContent = "Counting the scores…";
+    $("oScore").textContent = S.score;
+    $("oKills").textContent = S.kills;
+    $("oThird").textContent = "Team";
+    $("oBest").textContent = "…";
+    $("oAgain").classList.add("hidden");
+    $("oNote").textContent = "";
+    $("over").classList.remove("hidden");
+    $("hud").classList.add("off");
+    $("touchui").classList.add("hidden");
+    return;
+  }
+  const solo = [...net.roster.values()].every(
+    (p) => p.team !== myTeam() || p.seat === net.seat,
+  );
+  $("oTitle").textContent =
+    result === "draw"
+      ? "It's a draw"
+      : result === "won"
+        ? solo
+          ? "You win!"
+          : "Your team wins!"
+        : TEAM[winner % TEAM.length].name + " wins";
   $("oScore").textContent = S.score;
   $("oKills").textContent = S.kills;
-  $("oThird").textContent = isDuel() ? "Rival" : "Wingman";
-  $("oBest").textContent = R.score;
-  const again = result !== "left" && matchEnded();
+  $("oThird").textContent = "Team";
+  $("oBest").textContent = team ?? teamScores()[myTeam()] ?? S.score;
+  const again = matchEnded();
   $("oAgain").classList.toggle("hidden", !again);
-  $("oNote").textContent =
-    result === "left" ? "" : again ? "" : "The host can start another.";
+  $("oNote").textContent = again
+    ? MODES[net.mode]
+    : "The organiser can start another.";
   $("over").classList.remove("hidden");
   $("hud").classList.add("off");
   $("touchui").classList.add("hidden");
@@ -233,7 +286,7 @@ function matchOver(result) {
 // The group's board, once this match is on it (net/match.js).
 function showGroup(board, fresh) {
   if (game.state !== "over") return;
-  renderGroup($("oGroup"), board, net.kind, net.me?.h, fresh);
+  renderGroup($("oGroup"), board, net.mode, net.me?.h, fresh);
   $("oGroup").classList.remove("hidden");
 }
 
@@ -252,10 +305,17 @@ function overScreen(match) {
 // Leaving a match, by choice or because it ended: back to a one-player title.
 function toTitle() {
   net.on = false;
-  net.kind = net.role = null;
+  net.mode = null;
+  net.seat = null;
+  net.teams = 0;
+  net.roster.clear();
+  net.onFlag = null;
   if (ownSpeed !== null) setSpeed(ownSpeed, false);
   ownSpeed = null;
-  hideRemote();
+  clearRemotes();
+  clearFields();
+  wearTeam(-1);
+  P.ghost = false;
   for (const e of enemies) {
     e.alive = false;
     e.obj.visible = false;
@@ -276,7 +336,7 @@ function toTitle() {
   P.shadow.visible = false;
   game.state = "title";
   setPause(false);
-  $("hRivalRow").classList.add("hidden");
+  $("hTeams").classList.add("hidden");
   overScreen(false);
   for (const id of ["over", "pause"]) $(id).classList.add("hidden");
   $("hud").classList.add("off");
@@ -454,7 +514,8 @@ export function boot({ createRenderer }) {
     },
     startGame,
     net,
-    R,
+    remotes,
+    fields,
   };
   return true;
 }

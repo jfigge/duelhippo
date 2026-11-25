@@ -44,20 +44,28 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   control back to the keyboard and turns it off. It is never on in keyboard
   play: `isTouch` is no guide, since touch-screen laptops and jsdom both
   report it. It is tested in `auto-level.test.js`.
-- **Two player** (`scripts/net/`, `remote.js`, `src/server/`). Every hook in
-  the simulation modules is guarded by `net.on` from `net/bus.js`. When it is
-  false, which is every one-player game, the code paths and the order of
-  `Math.random` calls are the prototype's. Keep it that way: a new hook goes
-  behind the guard, and must not add or reorder random draws on the
-  one-player path.
+- **Team games** (`scripts/net/`, `remote.js`, `src/server/`): up to nine
+  players, hostless, all Free flight. Every hook in the simulation modules is
+  guarded by `net.on` from `net/bus.js`. When it is false, which is every
+  one-player game, the code paths and the order of `Math.random` calls are
+  the prototype's. Keep it that way: a new hook goes behind the guard, and
+  must not add or reorder random draws on the one-player path.
+  - **Mesh.** Every pair connects directly (`net/link.js`), with a per-pair
+    server relay as the fallback. The lobby's organiser is the lowest seat in
+    the room; it owns the setup (layout, mode, friendly fire, roster) and
+    nothing else.
   - **Authority.** Each machine flies its own plane and decides when that
-    plane is hit or has crashed. The bomber's machine decides when a building
-    is hit. In co-op, the host runs the AI flyers.
-  - **What travels.** The other machine re-fires shots and bombs only for
-    show. The message list is in `net/protocol.js`.
-  - **Tests.** `net-duel.test.js` and `net-coop.test.js` play a match
-    against a scripted peer (`tests/fake-server.js`), and `server/tests` covers
-    the room rules.
+    plane is hit or has crashed (the victim names the shooter's seat). The
+    bomber's machine decides building hits, sent as damage amounts so they
+    add up. In Endless enemies each machine flies the flyer at its seat.
+  - **Ending.** Every machine decides the end itself from the same events
+    (outs, leaves, flags). Endless enemies waits for everyone's `fin` before
+    naming a winner, since state updates can lag a kill.
+  - **What travels.** Other machines re-fire shots and bombs only for show.
+    The message list is in `net/protocol.js`.
+  - **Tests.** `net-dogfight`, `net-flag` and `net-endless` play matches
+    against scripted players (`tests/fake-server.js`), and `server/tests`
+    covers the room rules.
 - **Enemy rounds.** These are drawn pointing the way they fly. In the
   prototype, `fire()` aliased `tv` and aimed the mesh wrongly; only the
   drawing changed.
@@ -94,14 +102,15 @@ Rules that follow from this:
 - `state`
 - `constants`
 - `util`
-- `remote`: the other player's plane, drawn from its updates
+- `remote`: the other players' planes, drawn from their updates
 - `scores`: the player's id, initials and match name; the one-player board's
-  client; the two-player group boards and their merge
+  client; the team-game group boards and their merge
 - `scoreboard`: the scoreboards on screen
 - `sha256`: a synchronous SHA-256 (Web Crypto's is async, and missing
   outside secure contexts)
-- `net/`: two player — `bus` (shared state, imports nothing), `link`,
-  `lobby`, `match`, `protocol`, `config`
+- `net/`: team games — `bus` (shared state, imports nothing), `link` (the
+  mesh), `lobby`, `match`, `protocol`, `teams` (layouts, colours, airfield
+  ring; pure), `config`
 - `game`: flow, update and boot
 - `main`: the browser entry point
 - `platform`: shell detection
@@ -153,7 +162,9 @@ wrangler is large and the game builds don't need it.
   Durable Object (one, named "solo") runs it on its SQLite storage; the tests
   run it on `node:sqlite`. It is the only thing the server stores.
 - Player ids are secrets of a sort: the server never returns them, and the
-  two-player protocol carries only their hashes.
+  team-game protocol carries only their hashes.
+- Rooms seat up to nine. The server reads only a message's envelope: `sig`
+  goes to one seat, `g` fans out to the seats named (or all others).
 - `worker.js` wires those rules to a Durable Object that uses the WebSocket
   Hibernation API, which keeps it on the free plan.
 - The server never reads game messages; it forwards them.

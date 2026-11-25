@@ -49,21 +49,6 @@ export const TDEF = [
   ["tanks", 3450],
 ];
 
-// The duel's two towns: one each, mirrored about the midpoint of the two
-// runways (x = 1425), so neither side is nearer its target. The guest's is
-// the right-hand half of TDEF; the host's is that, reflected. Not part of
-// the prototype.
-export const DUEL_TDEF = [
-  ["tanks", -600, "host"],
-  ["hangar", -400, "host"],
-  ["factory", 400, "host"],
-  ["hq", 650, "host"],
-  ["hq", 2200, "guest"],
-  ["factory", 2450, "guest"],
-  ["hangar", 3250, "guest"],
-  ["tanks", 3450, "guest"],
-];
-
 export const SKY = 0x8fd3ff;
 
 export const BEST_KEY = "duelhippo.best";

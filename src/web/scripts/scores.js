@@ -30,10 +30,10 @@
 // "ACE" never overwrite each other. A score that cannot be sent (offline, no
 // initials yet) waits in PENDING_KEY and goes with the next attempt.
 //
-// Two player: boards that live only on the players' devices. Each belongs to
-// one group of players, named by a hash of their ids' hashes, so the same
-// friends meeting again see their own board and a different line-up sees a
-// different one. Raw ids never leave this device; only their hashes travel,
+// Team games: boards that live only on the players' devices. Each belongs
+// to one group of players, named by a hash of their ids' hashes, so the same
+// friends meeting again see their own board and a different line-up (three
+// of the four, say) sees a different one. Raw ids never leave this device; only their hashes travel,
 // so a friend cannot post to the one-player board as you. Every member keeps
 // a copy, and the copies are merged whenever the group meets.
 //
@@ -227,16 +227,24 @@ export async function flushSolo() {
   }
 }
 
-// ── Two player: the group boards ────────────────────────────────────────────
-// A group's board: {duel: [entry], coop: [entry]}, ten of each. An entry is
-// one finished match:
-//   {id, at, m, p: [[hash, name, score], …], w: winner's hash | null}
-// Duels rank by the best single score in them, co-op games by the team's
-// total; a tie goes to the earlier match.
-const rankScore = (kind, e) =>
-  kind === "coop"
-    ? e.p.reduce((t, p) => t + p[2], 0)
-    : Math.max(...e.p.map((p) => p[2]));
+// ── Team games: the group boards ────────────────────────────────────────────
+// A group's board: {dogfight, flag, endless}, ten matches in each. An entry
+// is one finished match:
+//   {id, at, m, p: [[hash, name, score, team], …], w: winning team | null}
+// Dogfights rank by the best single score in them; Bomb the flag and Endless
+// enemies by the best team's total. A tie goes to the earlier match.
+export const BOARD_MODES = ["dogfight", "flag", "endless"];
+const MAX_PLAYERS = 9;
+
+export const teamTotals = (e) => {
+  const t = new Map();
+  for (const p of e.p) t.set(p[3], (t.get(p[3]) || 0) + p[2]);
+  return t;
+};
+const rankScore = (mode, e) =>
+  mode === "dogfight"
+    ? Math.max(...e.p.map((p) => p[2]))
+    : Math.max(...teamTotals(e).values());
 
 function cleanEntry(e, members) {
   if (!e || typeof e !== "object") return null;
@@ -244,18 +252,20 @@ function cleanEntry(e, members) {
     return null;
   if (!Number.isFinite(e.at) || !MODES.includes(e.m) || !Array.isArray(e.p))
     return null;
+  if (e.p.length > MAX_PLAYERS) return null;
   const p = [];
   for (const x of e.p) {
     if (!Array.isArray(x) || !HEX64.test(x[0])) return null;
     if (!Number.isInteger(x[2]) || x[2] < 0 || x[2] > MAX_SCORE) return null;
-    p.push([x[0], cleanName(x[1]) || "Pilot", x[2]]);
+    if (!Number.isInteger(x[3]) || x[3] < 0 || x[3] > 7) return null;
+    p.push([x[0], cleanName(x[1]) || "Pilot", x[2], x[3]]);
   }
   // Exactly this group's players, once each.
   const hs = p.map((x) => x[0]);
   if (new Set(hs).size !== hs.length || hs.length !== members.length)
     return null;
   if (!hs.every((h) => members.includes(h))) return null;
-  const w = HEX64.test(e.w) && hs.includes(e.w) ? e.w : null;
+  const w = Number.isInteger(e.w) && p.some((x) => x[3] === e.w) ? e.w : null;
   // In hash order, so every member's copy of a match reads the same.
   p.sort((x, y) => (x[0] < y[0] ? -1 : 1));
   return { id: e.id, at: e.at, m: e.m, p, w };
@@ -264,7 +274,7 @@ function cleanEntry(e, members) {
 // Two copies of a board made one. The same match on both keeps each
 // player's higher score (scores only grow in a match, so the higher one is
 // the later reading).
-export function mergeLists(kind, a, b, members) {
+export function mergeLists(mode, a, b, members) {
   const byId = new Map();
   for (const raw of [...a, ...b]) {
     const e = cleanEntry(raw, members);
@@ -278,10 +288,10 @@ export function mergeLists(kind, a, b, members) {
       const y = e.p.find((q) => q[0] === x[0]);
       if (y && y[2] > x[2]) x[2] = y[2];
     }
-    had.w = had.w || e.w;
+    had.w = had.w ?? e.w;
   }
   return [...byId.values()]
-    .sort((x, y) => rankScore(kind, y) - rankScore(kind, x) || x.at - y.at)
+    .sort((x, y) => rankScore(mode, y) - rankScore(mode, x) || x.at - y.at)
     .slice(0, TOP);
 }
 
@@ -292,29 +302,35 @@ function allGroups() {
 // A group's board, empty if they have never finished a match together.
 export function groupBoard(gid) {
   const g = allGroups()[gid];
-  return {
-    duel: Array.isArray(g?.duel) ? g.duel : [],
-    coop: Array.isArray(g?.coop) ? g.coop : [],
-  };
+  return Object.fromEntries(
+    BOARD_MODES.map((m) => [m, Array.isArray(g?.[m]) ? g[m] : []]),
+  );
 }
 
 // Folds another copy (a peer's, or one new match) into this device's.
 export function mergeGroup(gid, members, other) {
   const groups = allGroups(),
     mine = groupBoard(gid);
-  const next = {
-    duel: mergeLists("duel", mine.duel, other?.duel || [], members),
-    coop: mergeLists("coop", mine.coop, other?.coop || [], members),
-  };
-  if (next.duel.length || next.coop.length) {
+  const next = Object.fromEntries(
+    BOARD_MODES.map((m) => [
+      m,
+      mergeLists(
+        m,
+        mine[m],
+        Array.isArray(other?.[m]) ? other[m] : [],
+        members,
+      ),
+    ]),
+  );
+  if (BOARD_MODES.some((m) => next[m].length)) {
     groups[gid] = next;
     save(GROUPS_KEY, groups);
   }
   return next;
 }
 
-export function recordMatch(gid, members, kind, entry) {
-  return mergeGroup(gid, members, { [kind]: [entry] });
+export function recordMatch(gid, members, mode, entry) {
+  return mergeGroup(gid, members, { [mode]: [entry] });
 }
 
 export const rankOf = rankScore;

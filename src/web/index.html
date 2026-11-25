@@ -50,10 +50,7 @@
           <span>AMMO</span><b id="hAmmo">300</b><span>BOMBS</span
           ><b id="hBombs">6</b>
         </div>
-        <div class="row hidden" id="hRivalRow">
-          <span id="hRivalLabel">RIVAL</span><b id="hRival">0</b
-          ><span>PLANES</span><b id="hRivalLives">3</b>
-        </div>
+        <div class="teams hidden" id="hTeams"></div>
         <div class="row hidden" id="hSpeedRow">
           <span>SPEED</span><b id="hSpeed">100%</b>
         </div>
@@ -71,7 +68,7 @@
         <b>A/D</b> rudder<br />
         <b>I</b> invert · <b>M</b> sound · <b>F</b> fullscreen ·
         <b>P</b> pause<br />
-        <b>-/=</b> game speed (one player)
+        <b>-/=</b> game speed (one player only)
       </div>
       <div class="hint">H controls · P pause</div>
     </div>
@@ -109,10 +106,10 @@
             ><span>Full 3D chase cam, banking turns, radar.</span>
           </button>
           <button class="mode online" id="bOnline">
-            <b>Two player</b
+            <b>Team game</b
             ><span
-              >Duel a friend or team up, online. Phones, computers and browsers
-              all play together.</span
+              >Up to nine friends online, in teams or each for themselves.
+              Phones, computers and browsers all play together.</span
             >
           </button>
         </div>
@@ -239,7 +236,7 @@
 
     <section id="online" class="ov hidden">
       <div class="box">
-        <h2>Two player</h2>
+        <h2>Team game</h2>
         <div id="onMenu">
           <label class="callsign"
             ><span>Your name</span
@@ -253,29 +250,11 @@
           /></label>
           <div class="modes">
             <button class="mode" id="onHost">
-              <b>Host a game</b><span>Get a code to give your friend.</span>
+              <b>Make a room</b><span>Get a code to give your friends.</span>
             </button>
             <button class="mode free" id="onJoin">
-              <b>Join a game</b><span>Type in your friend's code.</span>
+              <b>Join a room</b><span>Type in a friend's code.</span>
             </button>
-          </div>
-        </div>
-        <div id="onSetup" class="hidden">
-          <div class="pick">
-            <button data-kind="duel">DUEL</button
-            ><button data-kind="coop">CO-OP</button>
-          </div>
-          <p class="pickNote">
-            Duel: one airfield and town each; shoot your friend down. Co-op: fly
-            together against the magenta flyers.
-          </p>
-          <div class="pick">
-            <button data-mmode="classic">CLASSIC</button
-            ><button data-mmode="free">FREE FLIGHT</button>
-          </div>
-          <div class="foot">
-            <span></span
-            ><button id="onCreate" class="ghost">CREATE GAME</button>
           </div>
         </div>
         <div id="onEnter" class="hidden">
@@ -294,9 +273,26 @@
         </div>
         <div id="onRoom" class="hidden">
           <div id="onCodeShow" class="code"></div>
+          <div class="pick">
+            <button data-gmode="dogfight">DOGFIGHT</button
+            ><button data-gmode="flag">FLAG</button
+            ><button data-gmode="endless">ENDLESS</button>
+          </div>
+          <div class="pick">
+            <select id="onLayout" aria-label="Teams"></select
+            ><button id="onFF">FRIENDLY FIRE OFF</button>
+          </div>
+          <p id="onDesc" class="pickNote"></p>
+          <p class="pickNote">
+            Dogfight: last team flying wins. Flag: bomb the other flags, keep
+            yours. Endless: most magenta flyers shot down; out of planes, you
+            fly on as a ghost and bomb the town.
+          </p>
+          <div id="onTeams" class="teamgrid"></div>
           <div id="onBoard" class="group hidden"></div>
           <div class="foot">
-            <span></span><button id="onStart" class="ghost">START</button>
+            <span>Tap a team to join it.</span
+            ><button id="onStart" class="ghost">START</button>
           </div>
         </div>
         <div id="onCount" class="hidden code"></div>

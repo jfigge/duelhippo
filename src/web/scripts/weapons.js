@@ -33,9 +33,9 @@ import { puff, boom } from "./effects.js";
 import { say } from "./msg.js";
 import { groundY, targets, hurtTarget, hippos, scareHippo } from "./world.js";
 import { P, PB } from "./flight.js";
-import { enemies, killEnemy } from "./ai.js";
-import { R } from "./remote.js";
-import { net, send, isDuel, isGuest } from "./net/bus.js";
+import { enemies, killEnemy, ownsEnemy } from "./ai.js";
+import { solidRemotes } from "./remote.js";
+import { net, send, teamOf, myTeam, canHurt } from "./net/bus.js";
 import { v3, unit3 } from "./net/protocol.js";
 
 // ── Bullets ─────────────────────────────────────────────────────────────────
@@ -52,8 +52,9 @@ const bMatP = new THREE.MeshBasicMaterial({ color: 0xfff27a }),
 const aim = new V();
 
 // `own` is 'p' for the player's rounds, 'e' for an enemy's, and in a match
-// 'r' for the other player's (net/match.js fires those as they report them).
-export function fire(pos, dir, spd, own) {
+// 'r' for another player's, whose seat is `seat` (net/match.js fires those
+// as they report them).
+export function fire(pos, dir, spd, own, seat = null) {
   if (net.on && own === "p")
     send({ t: "f", o: v3(pos), d: unit3(dir), s: spd });
   let b = bullets.find((b) => !b.on);
@@ -65,8 +66,10 @@ export function fire(pos, dir, spd, own) {
   }
   b.on = true;
   b.own = own;
-  // A rival's rounds are the enemy's magenta; a wingman's are the player's.
-  b.m.material = own === "p" || (own === "r" && !isDuel()) ? bMatP : bMatE;
+  b.seat = seat;
+  // A teammate's rounds are the player's yellow; everyone else's magenta.
+  b.m.material =
+    own === "p" || (own === "r" && teamOf(seat) === myTeam()) ? bMatP : bMatE;
   b.m.visible = true;
   b.m.position.copy(pos);
   b.v.copy(dir).multiplyScalar(spd);
@@ -83,12 +86,18 @@ export function updBullets(dt) {
     const p = b.m.position;
     let hit = false;
     if (b.own === "r") {
-      // The other player's round. It can only hurt this plane, and only in
-      // a duel: the machine that is hit decides, then says so by crashing.
-      // Elsewhere it is for show, as their machine does the damage.
-      if (isDuel() && P.alive && segD2(b.p0, p, P.pos) < 22) {
+      // Another player's round. It can only hurt this plane: the machine
+      // that is hit decides, then says so by crashing. A teammate's cannot,
+      // unless friendly fire is on; a ghost is never hit. Everything else it
+      // touches is for show, as the shooter's machine does that damage.
+      if (
+        P.alive &&
+        !P.ghost &&
+        canHurt(b.seat) &&
+        segD2(b.p0, p, P.pos) < 22
+      ) {
         hit = true;
-        P.hitBy = "r";
+        P.hitBy = b.seat;
         P.dmg = Math.min(100, P.dmg + 6);
         sfx.hit();
         puff(P.pos, 0xff55ff, 3, 6, 0.6, 0.3);
@@ -100,8 +109,8 @@ export function updBullets(dt) {
           hit = true;
           puff(e.pos, 0xfff27a, 3, 8, 0.7, 0.3);
           sfx.hit();
-          // A co-op guest's flyers are the host's: report the hit.
-          if (isGuest()) {
+          // Another player's flyer (Endless enemies): report the hit.
+          if (!ownsEnemy(e)) {
             send({ t: "eh", i: enemies.indexOf(e) });
             break;
           }
@@ -109,12 +118,15 @@ export function updBullets(dt) {
           if (e.hp <= 0) killEnemy(e, true);
           break;
         }
-      // A rival hit: sparks only; their machine takes the damage.
-      if (!hit && isDuel() && R.alive && segD2(b.p0, p, R.pos) < 22) {
-        hit = true;
-        puff(R.pos, 0xfff27a, 3, 6, 0.6, 0.3);
-        sfx.hit();
-      }
+      // Another plane hit: sparks only; their machine takes the damage.
+      if (!hit && net.on)
+        for (const r of solidRemotes())
+          if (canHurt(r.seat) && segD2(b.p0, p, r.pos) < 22) {
+            hit = true;
+            puff(r.pos, 0xfff27a, 3, 6, 0.6, 0.3);
+            sfx.hit();
+            break;
+          }
       if (!hit)
         for (const t of targets)
           if (t.alive && p.y < t.h && Math.hypot(p.x - t.x, p.z - t.z) < t.r) {
@@ -129,7 +141,7 @@ export function updBullets(dt) {
             scareHippo(h);
             break;
           }
-    } else if (P.alive && segD2(b.p0, p, P.pos) < 22) {
+    } else if (P.alive && !P.ghost && segD2(b.p0, p, P.pos) < 22) {
       hit = true;
       P.hitBy = "e";
       P.dmg = Math.min(100, P.dmg + 6);

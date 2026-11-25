@@ -17,44 +17,49 @@
  * with Duel Hippo. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// protocol.js — what the two machines say to each other, and its shape.
+// protocol.js — what the players' machines say to each other, and its shape.
 //
-// Messages are small JSON objects with a one-letter-ish type `t`. State
-// updates are "fast" (net/link.js: may be lost, never resent); everything
-// else is "sure". Every machine is the authority for its own plane, and the
-// host for the AI flyers in co-op; hits are decided by whoever is hit (or,
-// for buildings, whoever dropped the bomb) and reported to the other side.
+// Messages are small JSON objects with a one-letter-ish type `t`, sent to
+// everyone in the match unless marked otherwise; the link knows which seat
+// each came from. State updates are "fast" (net/link.js: may be lost, never
+// resent); everything else is "sure". There is no host: every machine is the
+// authority for its own plane (and, in Endless enemies, for the flyer at its
+// seat); hits are decided by whoever is hit (or, for buildings, whoever
+// dropped the bomb) and reported to everyone.
 //
-// Lobby
-//   hi     {v, h, n}                   guest → host, once connected
-//   setup  {v, kind, mode, speed, h, n} host → guest: the match on offer
-//   board  {g, duel, coop}             each side: its copy of the group board
-//   go     {id}                        host → guest: start (both count 3-2-1)
-//   bad    {text}                      the versions differ: no match
+// Lobby (the organiser is the lowest seat in the room)
+//   hi     {v, h, n}                   to each player met: version, hash, name
+//   setup  {v, layout, mode, ff, speed, roster: [[seat, team]]}
+//                                      organiser: the match on offer
+//   team   {team}                      to the organiser: put me on that team
+//   board  {g, dogfight, flag, endless} each: its copy of the group board
+//   go     {id}                        organiser: start (all count 3-2-1)
+//   bad    {text}                      versions differ, or already playing
 // Play
-//   s      packed state (below)        each side, 20 a second, fast
+//   s      packed state (below)        each, 20 a second, fast
 //   f      {o, d, s}                   I fired a round: origin, direction, speed
 //   b      {p, v}                      I dropped a bomb: position, velocity
-//   tg     {i, hp}                     building i now has hp (≤ 0: destroyed)
-//   down   {p, by}                     my plane is down at p; by: "you" if you did it
+//   tg     {i, d}                      I did d damage to building i
+//   down   {p, by}                     my plane is down at p; by: the seat
+//                                      that shot it down, if one did
 //   out    {}                          I have no planes left
-//   ef     {o, d, s}                   (co-op host) an AI flyer fired a round
-//   eh     {i, kill}                   (co-op guest) I hit AI flyer i / flew into it
-//   ek     {i, by}                     (co-op host) AI flyer i is down; by: "host" | "guest"
-//   town   {side}                      (host) rebuild that side's buildings
+//   ef     {o, d, s}                   my flyer fired a round
+//   eh     {i}                         I hit flyer i (its owner decides)
+//   ek     {i, by}                     my flyer i is down; by: the seat that
+//                                      gets the kill
 //   fin    {sc}                        my match is over; my final score
-//   bye    {}                          leaving the match
+//   bye    {}                          leaving
 //
-// h is a player's hash and n their match name (scores.js); g is the group
-// board's id, a hash of both players' hashes.
+// h is a player's hash and n their name (scores.js); g is the group board's
+// id, a hash of every player's hash.
 
-export const PROTO = 2;
+export const PROTO = 3;
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const r4 = (v) => Math.round(v * 10000) / 10000;
 
-// The player's state, in about 150 bytes of JSON.
-export function packState(P, S, enemies = null) {
+// The player's state, in about 150 bytes of JSON (200 with a flyer).
+export function packState(P, S, enemy = null) {
   const m = {
     t: "s",
     p: [r2(P.pos.x), r2(P.pos.y), r2(P.pos.z)],
@@ -66,26 +71,20 @@ export function packState(P, S, enemies = null) {
     d: Math.round(P.dmg),
     sc: S.score,
     k: S.kills,
-    l: Math.max(0, S.lives),
+    l: Math.max(0, Math.min(99, S.lives)),
   };
-  // Co-op host: the AI flyers, [index, x, y, z, qx, qy, qz, qw] each.
-  if (enemies)
-    m.e = enemies.flatMap((e, i) =>
-      e.alive
-        ? [
-            [
-              i,
-              r2(e.pos.x),
-              r2(e.pos.y),
-              r2(e.pos.z),
-              r4(e.q.x),
-              r4(e.q.y),
-              r4(e.q.z),
-              r4(e.q.w),
-            ],
-          ]
-        : [],
-    );
+  if (P.ghost) m.gh = 1;
+  // Endless enemies: this machine's flyer, [x, y, z, qx, qy, qz, qw].
+  if (enemy && enemy.alive)
+    m.e = [
+      r2(enemy.pos.x),
+      r2(enemy.pos.y),
+      r2(enemy.pos.z),
+      r4(enemy.q.x),
+      r4(enemy.q.y),
+      r4(enemy.q.z),
+      r4(enemy.q.w),
+    ];
   return m;
 }
 
@@ -107,7 +106,8 @@ export function unpackState(m) {
     score: num(m.sc),
     kills: num(m.k),
     lives: num(m.l, 3),
-    enemies: Array.isArray(m.e) ? m.e.filter((e) => vec(e, 8)) : null,
+    ghost: m.gh === 1,
+    enemy: vec(m.e, 7),
   };
 }
 

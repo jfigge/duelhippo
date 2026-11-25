@@ -25,6 +25,7 @@
 // is built with textContent, never innerHTML.
 
 import { $ } from "./util.js";
+import { TEAM } from "./net/teams.js";
 import {
   player,
   setInitials,
@@ -176,15 +177,19 @@ export function initScoreboard() {
   if (hasBoard()) flushSolo().catch(() => {});
 }
 
-// ── Two player ──────────────────────────────────────────────────────────────
-// `board` is a group's {duel, coop}; `kind` picks which list; `mine` is this
-// player's hash, `fresh` a match to mark as just played.
-export function renderGroup(target, board, kind, mine, fresh = null) {
+// ── Team games ──────────────────────────────────────────────────────────────
+// `board` is a group's {dogfight, flag, endless}; `mode` picks which list;
+// `mine` is this player's hash, `fresh` a match to mark as just played.
+const TITLE = {
+  dogfight: "Your best dogfights",
+  flag: "Your best flag games",
+  endless: "Your best endless games",
+};
+
+export function renderGroup(target, board, mode, mine, fresh = null) {
   target.replaceChildren();
-  const list = board[kind] || [];
-  target.append(
-    el("h3", "", kind === "coop" ? "Your best co-op games" : "Your best duels"),
-  );
+  const list = board[mode] || [];
+  target.append(el("h3", "", TITLE[mode] || "Your best games"));
   if (!list.length) {
     target.append(
       el(
@@ -195,17 +200,39 @@ export function renderGroup(target, board, kind, mine, fresh = null) {
     );
     return;
   }
-  const ol = el("ol", "board");
+  const ol = el("ol", "board team");
   list.forEach((e, i) => {
-    // You first, then the others.
-    const ps = [...e.p].sort((a, b) =>
-      a[0] === mine ? -1 : b[0] === mine ? 1 : 0,
+    const li = el("li", e.id === fresh ? "mine" : "");
+    const who = el("span", "nm");
+    // Team by team, the winners first and starred.
+    const teams = [...new Set(e.p.map((p) => p[3]))].sort(
+      (a, b) => (b === e.w) - (a === e.w) || a - b,
     );
-    const who = ps
-      .map((p) => (e.w === p[0] ? "★" : "") + p[1] + " " + p[2])
-      .join(" · ");
-    const total = kind === "coop" ? rankOf("coop", e) : "";
-    ol.append(row(i + 1, who, total, MODE[e.m], e.id === fresh));
+    teams.forEach((t, k) => {
+      const c = TEAM[t % TEAM.length];
+      if (k) who.append(" · ");
+      const tag = el("span", "", (t === e.w ? "★" : "") + c.name + ": ");
+      tag.style.color = c.css;
+      who.append(tag);
+      e.p
+        .filter((p) => p[3] === t)
+        .forEach((p, j) =>
+          who.append(
+            el(
+              "span",
+              p[0] === mine ? "me" : "",
+              (j ? ", " : "") + p[1] + " " + p[2],
+            ),
+          ),
+        );
+    });
+    li.append(
+      el("span", "rk", i + 1),
+      who,
+      el("b", "", String(rankOf(mode, e))),
+      el("i", "", ""),
+    );
+    ol.append(li);
   });
   target.append(ol);
 }

@@ -817,3 +817,69 @@ body.touch .tk {
   flex: 1;
   min-width: 0;
 }
+
+/* ── Team games ──────────────────────────────────────────────────────────── */
+#onLayout {
+  flex: 1;
+  min-height: 44px;
+  background: #0d1020;
+  border: 3px solid #556;
+  color: #dfe6ff;
+  font:
+    400 12px/1.4 "Press Start 2P",
+    monospace;
+  padding: 0 8px;
+}
+#onFF.on {
+  border-color: var(--mg);
+  color: var(--mg);
+}
+.teamgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.teamgrid .team {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  background: #0d1020;
+  border: 3px solid;
+  text-align: left;
+  min-height: 44px;
+}
+.teamgrid .team b {
+  font:
+    400 11px/1.4 "Press Start 2P",
+    monospace;
+  margin-bottom: 4px;
+}
+.teamgrid .team span {
+  font-size: 19px;
+  color: #dfe6ff;
+}
+.teamgrid .team span.free {
+  color: #556;
+}
+.teamgrid .team span.boss::after {
+  content: " ★";
+  color: var(--yl);
+}
+#hTeams .row span:first-child {
+  min-width: 7ch;
+}
+#hTeams .row.mine {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+}
+.board.team li {
+  grid-template-columns: 3ch minmax(0, 1fr) auto;
+}
+.board.team .nm {
+  white-space: normal;
+}
+.board .me {
+  text-decoration: underline;
+}

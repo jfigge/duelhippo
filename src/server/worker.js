@@ -20,7 +20,7 @@
 // worker.js — Duel Hippo's match server, on Cloudflare Workers.
 //
 //   GET /host         WebSocket: make a room; the reply names its code
-//   GET /join/<code>  WebSocket: join that room
+//   GET /join/<code>  WebSocket: join that room (up to nine players)
 //   GET /board/solo   the one-player scoreboard (?id= adds that player's place)
 //   POST /board/solo  a one-player score: {id, n, sc, m}; answers as GET does
 //   GET /             a line of text, to show the server is up
@@ -28,9 +28,10 @@
 // Each room is a Durable Object named by its code, so both players reach the
 // same one wherever in the world they connect from. It uses the WebSocket
 // Hibernation API: between messages the object sleeps and costs nothing,
-// which is what keeps a free game free. In a direct (WebRTC) match the room
-// carries only the handshake; in a relayed one it carries the game too.
-// room.js has the rules.
+// which is what keeps a free game free. Every pair of players connects
+// directly (WebRTC) when it can, and then the room carries only the
+// handshake; for a pair that cannot, it relays their game messages, one
+// copy in and one out per player they are for. room.js has the rules.
 //
 // The scoreboard is one more Durable Object, a single one named "solo", so
 // every player reads and writes the same table. board.js has its rules.
@@ -40,7 +41,7 @@ import {
   makeCode,
   normaliseCode,
   admit,
-  other,
+  route,
   acceptable,
   underLimit,
   CLOSE,
@@ -151,13 +152,22 @@ export class Room extends DurableObject {
   // fine for a flood guard.
   counters = new WeakMap();
 
+  seatOf = (ws) => ws.deserializeAttachment()?.seat;
+
+  seats() {
+    return new Set(
+      this.ctx
+        .getWebSockets()
+        .map(this.seatOf)
+        .filter((s) => Number.isInteger(s)),
+    );
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     const code = url.pathname.slice(1);
     const kind = url.searchParams.get("as");
-    const present = new Set(
-      this.ctx.getWebSockets().map((ws) => ws.deserializeAttachment()?.role),
-    );
+    const present = this.seats();
 
     // Taken: answered before any socket exists, so the worker can retry.
     const verdict =
@@ -178,39 +188,43 @@ export class Room extends DurableObject {
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    this.ctx.acceptWebSocket(server, [verdict.role]);
-    server.serializeAttachment({ role: verdict.role });
-    server.send(JSON.stringify({ t: "room", code, role: verdict.role }));
-    if (verdict.role === "guest")
-      this.to("host", JSON.stringify({ t: "peer" }));
+    const { seat } = verdict;
+    this.ctx.acceptWebSocket(server, [String(seat)]);
+    server.serializeAttachment({ seat });
+    server.send(
+      JSON.stringify({ t: "room", code, seat, peers: [...present].sort() }),
+    );
+    for (const s of present) this.to(s, JSON.stringify({ t: "peer", seat }));
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  // Everything a player sends goes to the other player, unread.
+  // A handshake for one player, or a relayed game message for some; the
+  // room reads only the envelope (room.js route).
   webSocketMessage(ws, message) {
     if (!acceptable(message)) return;
     let counter = this.counters.get(ws);
     if (!counter) this.counters.set(ws, (counter = {}));
     if (!underLimit(counter)) return;
-    const role = ws.deserializeAttachment()?.role;
-    this.to(other(role), message);
+    const r = route(message, this.seatOf(ws), this.seats());
+    if (r) for (const s of r.to) this.to(s, r.text);
   }
 
-  // The host leaving ends the room; a guest leaving frees the seat.
+  // Anyone may leave; the room lasts while anyone is in it.
   webSocketClose(ws) {
-    const role = ws.deserializeAttachment()?.role;
-    this.to(other(role), JSON.stringify({ t: "left" }));
-    if (role === "host")
-      for (const g of this.ctx.getWebSockets("guest"))
-        g.close(CLOSE.ended, "The host left.");
+    const seat = this.seatOf(ws);
+    if (!Number.isInteger(seat)) return;
+    ws.serializeAttachment({ seat: null });
+    for (const s of this.seats())
+      this.to(s, JSON.stringify({ t: "left", seat }));
   }
 
   webSocketError(ws) {
     this.webSocketClose(ws);
   }
 
-  to(role, message) {
-    for (const ws of this.ctx.getWebSockets(role)) {
+  to(seat, message) {
+    for (const ws of this.ctx.getWebSockets(String(seat))) {
+      if (this.seatOf(ws) !== seat) continue;
       try {
         ws.send(message);
       } catch {

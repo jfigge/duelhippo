@@ -28,11 +28,12 @@ import { STALL, GEAR, HOME, EB, LANE } from "./constants.js";
 import { camera } from "./scene.js";
 import { S, game } from "./state.js";
 import { tickMsg } from "./msg.js";
-import { groundY, targets, hippos } from "./world.js";
+import { groundY, targets, hippos, fields } from "./world.js";
 import { P, PB } from "./flight.js";
 import { enemies } from "./ai.js";
-import { R } from "./remote.js";
-import { net, isDuel } from "./net/bus.js";
+import { remotes, teamScores } from "./remote.js";
+import { net, isMode, myTeam } from "./net/bus.js";
+import { TEAM } from "./net/teams.js";
 
 let hudT = 0,
   rc = null,
@@ -57,16 +58,19 @@ export function hud(dt) {
   hudT = 0.1;
   const alt = Math.max(0, P.pos.y - groundY(P.pos.x, P.pos.z) - GEAR);
   $("hScore").textContent = S.score;
-  $("hLives").textContent = Math.max(0, S.lives);
+  $("hLives").textContent = isMode("flag")
+    ? S.lives > 0
+      ? "∞"
+      : 0
+    : P.ghost
+      ? "GHOST"
+      : Math.max(0, S.lives);
   $("hKills").textContent = S.kills;
   $("hSpd").textContent = Math.round(P.speed * 3.6);
   $("hAlt").textContent = Math.round(alt);
   $("hAmmo").textContent = Math.floor(P.ammo);
   $("hBombs").textContent = P.bombs;
-  if (net.on) {
-    $("hRival").textContent = R.score;
-    $("hRivalLives").textContent = R.lives;
-  }
+  if (net.on) teamPanel();
   $("bThr").style.width = P.thr * 100 + "%";
   $("bFuel").style.width = P.fuel + "%";
   $("bDmg").style.width = P.dmg + "%";
@@ -115,12 +119,35 @@ function drawRadar() {
     rc.fillStyle = col;
     rc.fillRect(R + sx * k - s / 2, R + sy * k - s / 2, s, s);
   };
-  dot(HOME.x, HOME.z, "#55ffff", 14);
-  dot(EB.x, EB.z, "#ff55ff", 10);
-  for (const t of targets) if (t.alive) dot(t.x, t.z, "#ffff55", 7);
+  if (net.on)
+    for (const f of fields)
+      dot(
+        f.x,
+        f.z,
+        TEAM[f.team % TEAM.length].css,
+        f.team === myTeam() ? 14 : 10,
+      );
+  else {
+    dot(HOME.x, HOME.z, "#55ffff", 14);
+    dot(EB.x, EB.z, "#ff55ff", 10);
+  }
+  for (const t of targets)
+    if (t.alive)
+      dot(
+        t.x,
+        t.z,
+        t.kind === "flag" ? TEAM[t.side % TEAM.length].css : "#ffff55",
+        7,
+      );
   for (const e of enemies) if (e.alive) dot(e.pos.x, e.pos.z, "#ff55ff", 9);
-  if (net.on && R.alive)
-    dot(R.pos.x, R.pos.z, isDuel() ? "#ff55ff" : "#ffff55", 13);
+  for (const r of remotes.values())
+    if (r.alive)
+      dot(
+        r.pos.x,
+        r.pos.z,
+        r.ghost ? "#8a8a9a" : TEAM[r.team % TEAM.length].css,
+        12,
+      );
   rc.fillStyle = "#fff";
   rc.beginPath();
   rc.moveTo(R, R - 10);
@@ -159,14 +186,53 @@ function drawStrip() {
   sc.fillStyle = "#ff55ff";
   for (const e of enemies)
     if (e.alive) sc.fillRect(X(e.pos.x) - 4, Y(e.pos.y) - 4, 8, 8);
-  if (net.on && R.alive) {
-    sc.fillStyle = isDuel() ? "#ff55ff" : "#ffff55";
-    sc.fillRect(X(R.pos.x) - 5, Y(R.pos.y) - 5, 10, 10);
-  }
   if (P.alive) {
     sc.fillStyle = "#fff";
     sc.fillRect(X(P.pos.x) - 5, Y(P.pos.y) - 5, 10, 10);
   }
+}
+
+// The HUD's team rows: each team's colour, score, and how many of its
+// players are still flying (or, in Bomb the flag, whether its flag stands).
+function teamPanel() {
+  const scores = teamScores();
+  const rows = [];
+  for (let t = 0; t < net.teams; t++) {
+    const seats = [...net.roster.values()].filter((p) => p.team === t);
+    if (!seats.length) continue;
+    const flying = seats.filter((p) =>
+      p.seat === net.seat ? !P.ghost && S.lives > 0 : !remotes.get(p.seat)?.out,
+    ).length;
+    const flag = targets.find((x) => x.kind === "flag" && x.side === t);
+    const state = isMode("flag")
+      ? flag && flag.alive
+        ? "FLAG"
+        : "OUT"
+      : flying
+        ? `${flying}/${seats.length}`
+        : "OUT";
+    rows.push([t, scores[t], state]);
+  }
+  const box = $("hTeams");
+  // Rebuilt only when it changes: it is read ten times a second.
+  const key = JSON.stringify(rows);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.replaceChildren(
+    ...rows.map(([t, sc, st]) => {
+      const row = document.createElement("div");
+      row.className = "row" + (t === myTeam() ? " mine" : "");
+      const name = document.createElement("span");
+      name.textContent = TEAM[t % TEAM.length].name.toUpperCase();
+      name.style.color = TEAM[t % TEAM.length].css;
+      const score = document.createElement("b");
+      score.textContent = sc;
+      const tag = document.createElement("span");
+      tag.textContent = st;
+      row.append(name, score, tag);
+      return row;
+    }),
+  );
 }
 
 // Pixel-hippo pilot for the title card (original art).

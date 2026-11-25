@@ -17,14 +17,14 @@
  * with Duel Hippo. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// fake-server.js — the match server and the other player, played by a test.
+// fake-server.js — the match server and the other players, played by a test.
 //
 // Installs a stand-in WebSocket on the game's window. jsdom has no WebRTC,
-// so the game's link settles on the server relay, and every message to the
-// other player arrives here as {t:"g", m}. The test answers as the server
-// (`server()`) or as the other player (`peer()`).
+// so every pair settles on the server relay, and every message to the other
+// players arrives here as {t:"g", m, to?}. The test answers as the server
+// (`server()`) or as the player in a seat (`from()`).
 
-export function fakeServer(w, { role, code = "ABCD" }) {
+export function fakeServer(w, { seat = 0, peers = [], code = "ABCD" } = {}) {
   const self = { ws: null, opened: [] };
   class FakeWS {
     constructor(url) {
@@ -34,7 +34,7 @@ export function fakeServer(w, { role, code = "ABCD" }) {
       this.sent = [];
       self.ws = this;
       self.opened.push(url);
-      setTimeout(() => this.recv({ t: "room", code, role }), 0);
+      setTimeout(() => this.recv({ t: "room", code, seat, peers }), 0);
     }
     send(text) {
       this.sent.push(JSON.parse(text));
@@ -49,14 +49,33 @@ export function fakeServer(w, { role, code = "ABCD" }) {
   w.WebSocket = FakeWS;
   delete w.RTCPeerConnection;
   self.server = (m) => self.ws.recv(m);
-  self.peer = (m) => self.ws.recv({ t: "g", m });
-  // What the game has sent the other player, oldest first.
-  self.toPeer = (t) =>
+  self.from = (s, m) => self.ws.recv({ t: "g", m, from: s });
+  // What the game has sent the other players, oldest first: the messages,
+  // or (`withTo`) {m, to} with `to` the seats named (undefined: everyone).
+  self.sent = (t, withTo = false) =>
     self.ws.sent
       .filter((x) => x.t === "g" && (!t || x.m.t === t))
-      .map((x) => x.m);
+      .map((x) => (withTo ? { m: x.m, to: x.to } : x.m));
   self.clear = () => (self.ws.sent.length = 0);
   return self;
 }
 
 export const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export const hash = (c) => c.repeat(64);
+
+// A plane's state update, as protocol.js packs it.
+export const state = (p, extra = {}) => ({
+  t: "s",
+  p,
+  q: [0, 0, 0, 1],
+  v: 60,
+  h: 1,
+  a: 1,
+  g: 0,
+  d: 0,
+  sc: 0,
+  k: 0,
+  l: 3,
+  ...extra,
+});

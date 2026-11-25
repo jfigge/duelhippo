@@ -55,46 +55,61 @@ server. Open it with **SCORES** on the title or game-over card.
   device and goes with the next try.
 - A build without `NET_URL` has no board; the local best score still works.
 
-**Two player:** every pair of players has its own board, which lives only on
-their devices.
-- Players type a name (up to 12 characters) on the Two player screen.
+**Team games:** every group of players has its own board, which lives only
+on their devices.
+- Players type a name (up to 12 characters) on the Team game screen.
 - The board belongs to the group: it's named by a hash of each player's id
   hash, so the same friends meeting again see their board, and a different
-  line-up sees a different one. Raw ids never leave the device, so a friend
-  can't post to the one-player board as you.
-- Duels rank by the best single score, co-op games by the team total.
-- Each player keeps a copy. When the group meets, both send theirs and each
-  keeps the two merged, so a lost copy comes back from the other player.
+  line-up (three of the four, say) sees a different one. Raw ids never leave
+  the device, so a friend can't post to the one-player board as you.
+- Dogfights rank by the best single score; Bomb the flag and Endless
+  enemies by the best team's total.
+- Each player keeps a copy. As the group gathers in the lobby, everyone
+  sends theirs and keeps them all merged, so a lost copy comes back.
 
-## Two player
+## Team games
 
-**Two player** on the title screen pairs two copies of the game over the
-internet: any mix of iPhone, desktop app and browser.
+**Team game** on the title screen links up to nine copies of the game over
+the internet: any mix of iPhone, desktop app and browser. There is no host:
+every player connects to every other.
 
-- **Hosting:** one player picks **Duel** or **Co-op** and **Classic** or
-  **Free flight**, then gets a four-letter room code.
-- **Joining:** the other player types the code in. The host presses START and
-  both games count down together.
-- **Duel:** each player has a runway and a town. Points come from shooting the
-  other plane down and bombing the other town. There are no AI flyers.
-- **Co-op:** both players take off from the home runway against the magenta
-  flyers and their town.
-- **Speed:** a match runs at the host's game speed, and it can't be paused.
+- **Making a room:** one player makes a room and gets a four-letter code;
+  up to eight friends type it in. Whoever made it organises (if they leave,
+  the next player in takes over).
+- **Teams:** the organiser picks a layout: 4×2, 3×3, 3×2, 2×4, 2×3, 2×2,
+  or 2 to 8 solo players. Players tap a team to join it. Every team has its
+  own airfield, round a ring; team games are all Free flight.
+- **Friendly fire:** off by default. Off, teammates' rounds and collisions
+  can't hurt you, and your team can't bomb its own flag.
+- **Games:**
+  - **Dogfight:** three planes each. A team is out when all its players
+    are; the last team flying wins.
+  - **Bomb the flag:** each team has a flag beside its airfield. Planes are
+    unlimited while your flag stands; when it falls your team is out. The
+    last flag standing wins.
+  - **Endless enemies:** every player's machine flies one magenta flyer,
+    which comes back a few seconds after it's shot down. Shooting them
+    scores for your team. Out of planes, you fly on as a ghost: you can't
+    shoot or be hurt, but you can bomb the magenta town for points. It ends
+    when every player is out of planes; the team with the most points wins.
+- **Speed:** a match runs at the organiser's game speed, and it can't be
+  paused.
 - **One-player games** are unchanged.
 
 ### How it connects
-`src/server/` is a small Cloudflare Worker. It has one job: put two players in
-a room and pass the WebRTC handshake between them. After that the games talk
-directly, peer to peer, and the server does nothing.
+`src/server/` is a small Cloudflare Worker. It seats up to nine players in a
+room and passes the WebRTC handshake between every pair. After that the
+games talk directly, peer to peer, and the server does nothing.
 
-If a direct connection fails within 7 seconds (some carrier networks and
-strict NATs block it), the game traffic goes through the server instead. The
-two-player screen shows which happened: "DIRECT LINK" or "VIA SERVER".
+If a pair's direct connection fails within 7 seconds (some carrier networks
+and strict NATs block it), that pair's traffic goes through the server
+instead: one copy up from the sender, fanned out to every relayed player.
+The lobby shows how each player is reached: "3 DIRECT · 1 VIA SERVER".
 
 **Cost:** it runs on Cloudflare's free Workers plan. That plan allows 100,000
 requests a day, and the server counts 20 relayed messages as one request.
-- A direct match uses a few dozen messages in total.
-- A relayed match uses about 2,000 requests per hour.
+- A fully direct match uses a few dozen requests, even with nine players.
+- Each player whose link is relayed costs about 3,600 requests per hour.
 
 So the free plan covers a lot of play before it would cost anything. If it
 ever runs out, relayed matches fail until the next day; direct ones are
@@ -107,7 +122,7 @@ unaffected.
    `https://duelhippo-net.<you>.workers.dev`.
 3. Put `NET_URL=wss://duelhippo-net.<you>.workers.dev` in `dev.env`, and set
    the same value as the repository variable `NET_URL` so CI builds include
-   it. A build without `NET_URL` shows two-player as unavailable.
+   it. A build without `NET_URL` shows team games as unavailable.
 4. Optional: add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as
    repository secrets. `.github/workflows/server.yml` then redeploys the
    server whenever `src/server` changes.
@@ -116,8 +131,8 @@ With `NET_URL` set, `make web`, `make debug` and `make ios-live` play
 through the deployed server as well. To work on the server itself, run
 `make server` in a second terminal and start the game with an empty
 `NET_URL` (`make web NET_URL=`); it then uses the local server on port 8787.
-Open the game twice (two browser tabs, or the browser and `make debug`) to
-play yourself. Add `?relay` to the address to force the server relay.
+Open the game two or more times (browser tabs, or the browser and
+`make debug`) to play yourself. Add `?relay` to the address to force the server relay.
 
 ## Auto-level on touch screens
 
@@ -209,7 +224,7 @@ is optional: anything whose secrets are missing is skipped with a notice.
   the Mac download is unsigned, and macOS won't open it for most people.
 - **`HIPPOHERD_TOKEN`:** a fine-grained token with read and write access to
   the contents of jfigge/hippoherd only, used by the `web` job.
-- **Repository variable `NET_URL`:** the two-player server, built into every
+- **Repository variable `NET_URL`:** the team-game server, built into every
   release.
 
 ### By hand
@@ -235,11 +250,11 @@ src/
   icons/            duelhippo.svg, the one drawing every icon is made from
   web/              the game: index.html, styles/, scripts/
     scripts/        world, flight, ai, weapons, audio, hud, input, camera, …
-    scripts/net/    two player: link (WebRTC + relay), lobby, match, protocol
+    scripts/net/    team games: link (WebRTC mesh + relay), lobby, match, teams, protocol
     scripts/tests/  the equivalence harness and suites
   app/              Electron main process and preload
   ios/              the Xcode project (Capacitor), ExportOptions.plist
-  server/           the two-player match server (Cloudflare Worker, own package.json)
+  server/           the team-game match server (Cloudflare Worker, own package.json)
   tools/            dev-electron.mjs (make debug), make-icons.mjs,
                     asc-submit.mjs (App Store review), license-header.mjs
 ```

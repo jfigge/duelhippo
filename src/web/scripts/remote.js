@@ -17,103 +17,109 @@
  * with Duel Hippo. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// remote.js — the other player's plane, as this machine sees it.
+// remote.js — the other players' planes, as this machine sees them.
 //
-// It is not simulated here. The other machine flies it and sends its state
-// about 20 times a second (net/match.js); this keeps the last few updates
-// and draws the plane a little in the past, between two of them, so it moves
-// smoothly however the updates arrive. Past the newest update it carries on
-// along its nose for a moment, then waits.
+// They are not simulated here. Each player's machine flies its own plane and
+// sends its state about 20 times a second (net/match.js); this keeps the
+// last few updates of each and draws every plane a little in the past,
+// between two of them, so it moves smoothly however the updates arrive.
+// Past the newest update a plane carries on along its nose for a moment,
+// then waits. Planes wear their team's colours (net/teams.js); a player out
+// of planes in Endless enemies flies on as a see-through ghost.
 
 import { V, Q } from "./util.js";
 import { scene } from "./scene.js";
-import { makePlane, blob, syncShadow } from "./world.js";
+import { S } from "./state.js";
+import { makePlane, blob, syncShadow, ghostly } from "./world.js";
+import { TEAM } from "./net/teams.js";
+import { net } from "./net/bus.js";
 
-// How far behind the newest update the plane is drawn: two updates' worth,
+// How far behind the newest update a plane is drawn: two updates' worth,
 // so one late or lost update does not show.
 export const DELAY_MS = 110;
 const EXTRAPOLATE_MS = 250;
 
-const LOOKS = {
-  rival: [0x3a2a40, 0xe055d0, 0xff55ff, 0x7a1f70], // magenta: the duel
-  wingman: [0xf2f2ea, 0xffd84a, 0xffff55, 0xb49a14], // yellow: co-op
-};
+export const remotes = new Map(); // seat → remote
 
-export const R = {
-  pos: new V(),
-  q: new Q(),
-  vel: new V(),
-  speed: 0,
-  thr: 0,
-  alive: false,
-  grounded: true,
-  dmg: 0,
-  score: 0,
-  kills: 0,
-  lives: 3,
-  obj: null,
-  shadow: blob(),
-  buf: [], // { at, p: V, q: Q, s }
-};
-R.shadow.visible = false;
-
-const objs = {};
-function look(kind) {
-  if (!objs[kind]) {
-    objs[kind] = makePlane(...LOOKS[kind]);
-    objs[kind].visible = false;
-    scene.add(objs[kind]);
-  }
-  return objs[kind];
+export function addRemote(seat, team) {
+  dropRemote(seat);
+  const obj = makePlane(...TEAM[team % TEAM.length].plane);
+  obj.visible = false;
+  scene.add(obj);
+  const r = {
+    seat,
+    team,
+    pos: new V(),
+    q: new Q(),
+    vel: new V(),
+    speed: 0,
+    thr: 0,
+    alive: false,
+    grounded: true,
+    ghost: false,
+    dmg: 0,
+    score: 0,
+    kills: 0,
+    lives: 3,
+    out: false, // out of planes (or of the match)
+    gone: false, // left the match
+    obj,
+    shadow: blob(),
+    buf: [], // { at, p: V, q: Q, s }
+  };
+  r.shadow.visible = false;
+  remotes.set(seat, r);
+  return r;
 }
 
-export function resetRemote(kind) {
-  for (const o of Object.values(objs)) o.visible = false;
-  R.obj = look(kind === "duel" ? "rival" : "wingman");
-  R.alive = false;
-  R.buf.length = 0;
-  R.score = R.kills = 0;
-  R.lives = 3;
-  R.shadow.visible = false;
+export function dropRemote(seat) {
+  const r = remotes.get(seat);
+  if (!r) return;
+  scene.remove(r.obj);
+  scene.remove(r.shadow);
+  remotes.delete(seat);
 }
 
-export function hideRemote() {
-  for (const o of Object.values(objs)) o.visible = false;
-  R.alive = false;
-  R.shadow.visible = false;
-  R.buf.length = 0;
+export function clearRemotes() {
+  for (const seat of [...remotes.keys()]) dropRemote(seat);
 }
 
-// One state update from the other machine (net/protocol.js unpacks it).
-export function pushState(s, at) {
-  if (s.alive && !R.alive) R.buf.length = 0; // a new plane: no sliding in
-  R.alive = s.alive;
-  R.grounded = s.grounded;
-  R.dmg = s.dmg;
-  R.thr = s.thr;
-  R.score = s.score;
-  R.kills = s.kills;
-  R.lives = s.lives;
+// One state update from a player's machine (net/protocol.js unpacks it).
+export function pushState(seat, s, at) {
+  const r = remotes.get(seat);
+  if (!r) return;
+  if (s.alive && !r.alive) r.buf.length = 0; // a new plane: no sliding in
+  r.alive = s.alive;
+  r.grounded = s.grounded;
+  r.dmg = s.dmg;
+  r.thr = s.thr;
+  r.score = s.score;
+  r.kills = s.kills;
+  r.lives = s.lives;
+  if (s.ghost !== r.ghost) ghostly(r.obj, (r.ghost = s.ghost));
   if (!s.alive) return;
-  R.buf.push({
+  r.buf.push({
     at,
     p: new V().fromArray(s.p),
     q: new Q().fromArray(s.q),
     s: s.speed,
   });
-  if (R.buf.length > 8) R.buf.shift();
+  if (r.buf.length > 8) r.buf.shift();
 }
 
 const fwd = new V();
 
-// Place the plane for real time `now` (ms).
-export function updRemote(now, dt) {
-  const o = R.obj;
-  if (!o) return;
-  const buf = R.buf;
-  if (!R.alive || !buf.length) {
+// Place every plane for real time `now` (ms).
+export function updRemotes(now, dt) {
+  for (const r of remotes.values()) place(r, now, dt);
+}
+
+function place(r, now, dt) {
+  const o = r.obj,
+    buf = r.buf;
+  if (!r.alive || !buf.length) {
     o.visible = false;
-    syncShadow(R.shadow, R.pos, false);
+    syncShadow(r.shadow, r.pos, false);
     return;
   }
   const t = now - DELAY_MS;
@@ -123,22 +129,37 @@ export function updRemote(now, dt) {
     a = buf[i - 1];
   if (a && t >= a.at && t <= b.at) {
     const k = (t - a.at) / Math.max(1, b.at - a.at);
-    R.pos.lerpVectors(a.p, b.p, k);
-    R.q.slerpQuaternions(a.q, b.q, k);
-    R.speed = a.s + (b.s - a.s) * k;
+    r.pos.lerpVectors(a.p, b.p, k);
+    r.q.slerpQuaternions(a.q, b.q, k);
+    r.speed = a.s + (b.s - a.s) * k;
   } else {
     // Ahead of the newest update (or before the oldest): hold its attitude
     // and, briefly, keep flying it.
     const ahead = Math.min(EXTRAPOLATE_MS, Math.max(0, t - b.at)) / 1000;
-    R.q.copy(b.q);
-    R.speed = b.s;
+    r.q.copy(b.q);
+    r.speed = b.s;
     fwd.set(0, 0, -1).applyQuaternion(b.q);
-    R.pos.copy(b.p).addScaledVector(fwd, b.s * ahead);
+    r.pos.copy(b.p).addScaledVector(fwd, b.s * ahead);
   }
-  R.vel.set(0, 0, -1).applyQuaternion(R.q).multiplyScalar(R.speed);
+  r.vel.set(0, 0, -1).applyQuaternion(r.q).multiplyScalar(r.speed);
   o.visible = true;
-  o.position.copy(R.pos);
-  o.quaternion.copy(R.q);
-  o.userData.prop.rotation.z += (R.thr * 55 + (R.speed > 1 ? 6 : 0)) * dt;
-  syncShadow(R.shadow, R.pos, true);
+  o.position.copy(r.pos);
+  o.quaternion.copy(r.q);
+  o.userData.prop.rotation.z += (r.thr * 55 + (r.speed > 1 ? 6 : 0)) * dt;
+  syncShadow(r.shadow, r.pos, !r.ghost);
+}
+
+// Planes that can fight: in the air (or on a runway), and not ghosts.
+export const solidRemotes = () =>
+  [...remotes.values()].filter((r) => r.alive && !r.ghost);
+
+// Each team's score: this player's and everyone else's last report.
+export function teamScores() {
+  const out = new Array(net.teams).fill(0);
+  for (const p of net.roster.values()) {
+    if (p.team < 0 || p.team >= net.teams) continue;
+    out[p.team] +=
+      p.seat === net.seat ? S.score : (remotes.get(p.seat)?.score ?? 0);
+  }
+  return out;
 }

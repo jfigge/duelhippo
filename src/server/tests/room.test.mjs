@@ -26,9 +26,11 @@ import {
   makeCode,
   normaliseCode,
   admit,
+  route,
   underLimit,
   acceptable,
   CLOSE,
+  MAX_SEATS,
   MAX_PER_SECOND,
 } from "../room.js";
 
@@ -52,17 +54,41 @@ test("what a player types is forgiven its case and spaces, nothing else", () => 
   assert.equal(normaliseCode(undefined), null);
 });
 
-test("a room takes one host, then one guest", () => {
-  assert.deepEqual(admit("host", new Set()), { ok: true, role: "host" });
-  assert.equal(admit("host", new Set(["host"])).close, CLOSE.taken);
+test("a room fills seat by seat, lowest free first, up to nine", () => {
+  assert.deepEqual(admit("host", new Set()), { ok: true, seat: 0 });
+  assert.equal(admit("host", new Set([3])).close, CLOSE.taken);
   assert.equal(admit("guest", new Set()).close, CLOSE.nogame);
-  assert.deepEqual(admit("guest", new Set(["host"])), {
-    ok: true,
-    role: "guest",
-  });
-  assert.equal(admit("guest", new Set(["host", "guest"])).close, CLOSE.full);
-  // A guest whose host has gone is not a room anyone can host into.
-  assert.equal(admit("host", new Set(["guest"])).close, CLOSE.taken);
+  assert.deepEqual(admit("guest", new Set([0])), { ok: true, seat: 1 });
+  assert.deepEqual(admit("guest", new Set([1, 2])), { ok: true, seat: 0 });
+  const full = new Set(Array.from({ length: MAX_SEATS }, (_, i) => i));
+  assert.equal(admit("guest", full).close, CLOSE.full);
+  full.delete(4);
+  assert.deepEqual(admit("guest", full), { ok: true, seat: 4 });
+});
+
+test("a handshake goes to its one seat, stamped with the sender", () => {
+  const here = new Set([0, 1, 2]);
+  const r = route(JSON.stringify({ t: "sig", to: 2, d: "x" }), 0, here);
+  assert.deepEqual(r.to, [2]);
+  assert.deepEqual(JSON.parse(r.text), { t: "sig", to: 2, d: "x", from: 0 });
+  assert.equal(route(JSON.stringify({ t: "sig", to: 7 }), 0, here), null);
+  assert.equal(route(JSON.stringify({ t: "sig", to: 0 }), 0, here), null);
+});
+
+test("a relayed game message fans out: to everyone else, or to the seats named", () => {
+  const here = new Set([0, 1, 2, 5]);
+  const all = route(JSON.stringify({ t: "g", m: { t: "s" } }), 1, here);
+  assert.deepEqual(all.to, [0, 2, 5]);
+  assert.deepEqual(JSON.parse(all.text), { t: "g", m: { t: "s" }, from: 1 });
+  const some = route(
+    JSON.stringify({ t: "g", m: { t: "f" }, to: [5, 1, 8] }),
+    1,
+    here,
+  );
+  assert.deepEqual(some.to, [5], "not back to the sender, not to empty seats");
+  assert.equal(route("not json", 1, here), null);
+  assert.equal(route(JSON.stringify({ t: "room" }), 1, here), null);
+  assert.equal(route(JSON.stringify({ t: "g", m: 1 }), 0, new Set([0])), null);
 });
 
 test("a flood is cut off at the limit and forgiven the next second", () => {

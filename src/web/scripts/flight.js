@@ -72,9 +72,11 @@ import {
   targets,
   solids,
   hippos,
+  fields,
+  onAnyField,
 } from "./world.js";
 import { fire } from "./weapons.js";
-import { net, send, isDuel, isGuest } from "./net/bus.js";
+import { net, send, myTeam } from "./net/bus.js";
 import { v3 } from "./net/protocol.js";
 
 export const PB = basis(new Q()); // the player's basis, recomputed in place
@@ -99,10 +101,12 @@ export const P = {
   ph: 0,
   phT: 0,
   svc: 0,
-  // Two-player only: the runway this plane belongs to (HOME, or EB for the
-  // duel's guest), and who did the last damage ("r": the other player).
+  // Team games only: the runway this plane belongs to (its team's field),
+  // who did the last damage (a seat, or "e" for an enemy flyer), and whether
+  // it is a ghost (Endless enemies, out of planes: can't shoot or be hurt).
   base: HOME,
   hitBy: null,
+  ghost: false,
 };
 P.obj = makePlane(0xf2f2ea, 0x3fd8e8, 0x55ffff, 0x14a0b4);
 scene.add(P.obj);
@@ -113,20 +117,22 @@ export const crashAt = new V();
 export function resetPlayer() {
   P.base = HOME;
   P.hitBy = null;
-  if (isDuel() && isGuest()) {
-    // The duel's guest starts at the far runway, facing home.
-    P.base = EB;
-    P.pos.set(EB.x + 190, GEAR, 0);
-    P.th = PI;
-    P.ph = P.phT = PI;
-    qSide(P.q, PI, PI);
-  } else {
-    // A co-op guest lines up ahead of the host on the same runway.
-    P.pos.set(HOME.x - (net.on && isGuest() ? 120 : 190), GEAR, 0);
-    P.th = 0;
-    P.ph = P.phT = 0;
-    qSide(P.q, 0, 0);
-  }
+  if (net.on) {
+    // A team game: the team's own field, teammates lined up in seat order.
+    P.base = fields[myTeam()] || HOME;
+    const mates = [...net.roster.values()]
+      .filter((p) => p.team === myTeam())
+      .map((p) => p.seat)
+      .sort((a, b) => a - b);
+    P.pos.set(
+      P.base.x - 190 + Math.max(0, mates.indexOf(net.seat)) * 55,
+      GEAR,
+      P.base.z,
+    );
+  } else P.pos.set(HOME.x - 190, GEAR, 0);
+  P.th = 0;
+  P.ph = P.phT = 0;
+  qSide(P.q, 0, 0);
   P.vel.set(0, 0, 0);
   P.speed = 0;
   P.sink = 0;
@@ -248,10 +254,12 @@ export function updPlayer(dt) {
   if (game.mode === "classic") P.pos.z = 0;
 
   // ── Ground contact: land, or crash ────────────────────────────────────────
-  // "Home" is this plane's own runway: HOME, except for the duel's guest.
+  // "Home" is this plane's own runway: HOME, or its team's field.
   const gy = groundY(P.pos.x, P.pos.z) + GEAR,
     onHome = onRun(P.pos, P.base),
-    onRw = onHome || onRun(P.pos, P.base === HOME ? EB : HOME);
+    onRw =
+      onHome ||
+      (net.on ? onAnyField(P.pos) : onRun(P.pos, P.base === HOME ? EB : HOME));
   if (!P.grounded && P.pos.y <= gy) {
     const vs = -P.vel.y,
       along = game.mode === "classic" || Math.abs(b.f.z) < 0.35;
@@ -326,7 +334,10 @@ export function updPlayer(dt) {
 
   // ── Guns: alternating muzzles ─────────────────────────────────────────────
   if (inp.fire && P.gunCd <= 0 && !dead) {
-    if (P.ammo >= 1) {
+    if (P.ghost) {
+      P.gunCd = 1.5;
+      say("Ghosts can't shoot. Bomb the town for your team!", 1.4);
+    } else if (P.ammo >= 1) {
       P.gunCd = 0.075;
       P.ammo--;
       P.side = -P.side;
@@ -381,12 +392,12 @@ function service(dt) {
 }
 
 export function crash(pos, why) {
-  // The other player learns where, and whether they get the kill.
+  // Everyone learns where, and which player (if any) gets the kill.
   if (net.on)
     send({
       t: "down",
       p: v3(pos),
-      by: P.hitBy === "r" && P.dmg >= 100 ? "you" : null,
+      by: Number.isInteger(P.hitBy) && P.dmg >= 100 ? P.hitBy : null,
     });
   crashAt.copy(pos);
   boom(pos, true);
@@ -394,7 +405,8 @@ export function crash(pos, why) {
   P.alive = false;
   P.obj.visible = false;
   P.shadow.visible = false;
-  S.lives--;
+  // A ghost has no planes left to lose: it is back on the runway shortly.
+  if (!P.ghost) S.lives--;
   game.respawnT = 3.2;
   say(why, 3);
 }

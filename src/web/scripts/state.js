@@ -34,7 +34,6 @@ export const S = {
   rebuildT: 0,
   spawnT: 0,
   best: 0,
-  rebuild: { host: 0, guest: 0 }, // duel only: each town's rebuild timer
 };
 try {
   S.best = +window.localStorage.getItem(BEST_KEY) || 0;

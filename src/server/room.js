@@ -20,23 +20,34 @@
 // room.js — the rules of a room, kept free of Cloudflare's APIs so they can
 // be tested under plain Node. worker.js wires them to a Durable Object.
 //
-// A room is two WebSockets: the host, who made it, and one guest, who typed
-// its code in. The server never looks inside the game: it introduces the two
-// players, carries their WebRTC handshake, and relays their game messages
-// when a direct connection cannot be made. Everything a player sends is
-// passed to the other player unchanged; the only messages the server writes
-// itself are these:
+// A room is up to MAX_SEATS WebSockets, one per player, each in a numbered
+// seat (0 is whoever made the room). There is no host: once the players are
+// in, every pair connects directly (WebRTC), and the room only introduces
+// them, carries each pair's handshake, and relays game messages for a pair
+// whose direct connection cannot be made. The server never looks inside the
+// game; it reads only the envelope of what a player sends:
 //
-//   {t:"room", code, role}   you are in room `code`, as "host" or "guest"
-//   {t:"peer"}               (to the host) a guest has joined
-//   {t:"left"}               the other player has gone
-//   {t:"error", code, text}  and then the socket closes
+//   {t:"sig", to, …}         a handshake message for seat `to`
+//   {t:"g", m, to?: [seat]}  a game message for those seats (all others if
+//                            `to` is left out); relayed, one copy each
+//
+// and stamps `from` (the sender's seat) on what it passes on. The only
+// messages the server writes itself are these:
+//
+//   {t:"room", code, seat, peers}  you are in room `code`, in `seat`; `peers`
+//                                  are the seats already there
+//   {t:"peer", seat}               a player has joined, in `seat`
+//   {t:"left", seat}               the player in `seat` has gone
+//   {t:"error", code, text}        and then the socket closes
 
 // Room codes: four letters from an alphabet with nothing to misread — no I
 // or L beside 1, no O beside 0, no U beside V. 22⁴ = 234,256 codes, retried
 // on a collision, for rooms that last minutes.
 export const ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ";
 export const CODE_LEN = 4;
+
+// Three teams of three is the largest game.
+export const MAX_SEATS = 9;
 
 export function makeCode(random = Math.random) {
   let s = "";
@@ -58,47 +69,73 @@ export function normaliseCode(raw) {
 
 // Close codes the client turns into words (net/link.js).
 export const CLOSE = {
-  taken: 4009, // a host asked for a code already in use: the worker retries
-  nogame: 4004, // joined a code nobody is hosting
-  full: 4003, // the room already has its guest
-  ended: 4000, // the host left
+  taken: 4009, // a new room asked for a code already in use: the worker retries
+  nogame: 4004, // joined a code nobody is in
+  full: 4003, // every seat is taken
 };
 
 // A message a player may send through the room: text, short. A game state
-// update is about 200 bytes; 8 KB leaves room for a WebRTC offer.
+// update is about 250 bytes; 8 KB leaves room for a WebRTC offer and a
+// group scoreboard.
 export const MAX_MESSAGE = 8192;
 
-// A flood guard rather than a quota: the game sends about 40 messages a
-// second when relayed, so 120 is a misbehaving client, whose surplus is
-// dropped.
+// A flood guard rather than a quota: a relayed player sends about 40
+// messages a second (one copy, however many it is for), so 120 is a
+// misbehaving client, whose surplus is dropped.
 export const MAX_PER_SECOND = 120;
 
 export function acceptable(message) {
   return typeof message === "string" && message.length <= MAX_MESSAGE;
 }
 
-// Who may come in. `present` is the set of roles already connected.
+// Who may come in. `present` is the set of seats already taken; a newcomer
+// gets the lowest free one.
 export function admit(kind, present) {
   if (kind === "host")
-    return present.has("host") || present.has("guest")
+    return present.size
       ? { ok: false, close: CLOSE.taken, text: "That room is in use." }
-      : { ok: true, role: "host" };
-  if (!present.has("host"))
+      : { ok: true, seat: 0 };
+  if (!present.size)
     return {
       ok: false,
       close: CLOSE.nogame,
-      text: "No game with that code. Check it with your friend.",
+      text: "No game with that code. Check it with your friends.",
     };
-  if (present.has("guest"))
-    return {
-      ok: false,
-      close: CLOSE.full,
-      text: "That game already has two players.",
-    };
-  return { ok: true, role: "guest" };
+  for (let seat = 0; seat < MAX_SEATS; seat++)
+    if (!present.has(seat)) return { ok: true, seat };
+  return {
+    ok: false,
+    close: CLOSE.full,
+    text: `That game already has ${MAX_SEATS} players.`,
+  };
 }
 
-export const other = (role) => (role === "host" ? "guest" : "host");
+// Where a player's message goes, and what it becomes on the way: the seats
+// to deliver to, and the text to deliver, with the sender stamped on. Null
+// for anything the room does not carry.
+export function route(text, from, present) {
+  let m;
+  try {
+    m = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!m || typeof m !== "object") return null;
+  const others = [...present].filter((s) => s !== from);
+  if (m.t === "sig") {
+    if (!Number.isInteger(m.to) || m.to === from || !present.has(m.to))
+      return null;
+    return { to: [m.to], text: JSON.stringify({ ...m, from }) };
+  }
+  if (m.t === "g") {
+    const to = Array.isArray(m.to)
+      ? others.filter((s) => m.to.includes(s))
+      : others;
+    if (!to.length) return null;
+    return { to, text: JSON.stringify({ t: "g", m: m.m, from }) };
+  }
+  return null;
+}
 
 // A per-socket rate counter: true while under MAX_PER_SECOND in the current
 // second.
