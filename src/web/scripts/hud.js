@@ -36,7 +36,7 @@ import { enemies } from "./ai.js";
 import { remotes, teamScores } from "./remote.js";
 import { net, isMode, myTeam } from "./net/bus.js";
 import { TEAM } from "./net/teams.js";
-import { run, COURSES, clock } from "./course.js";
+import { run, COURSES, LIMITS, clock } from "./course.js";
 
 let hudT = 0,
   warnT = 0,
@@ -136,7 +136,7 @@ export function hud(dt) {
     const RINGS = COURSES[run.level];
     $("hRing").textContent =
       `${Math.min(run.next + 1, RINGS.length)}/${RINGS.length}`;
-    $("hTime").textContent = clock(run.t);
+    $("hTime").textContent = `${clock(run.t)} / ${clock(LIMITS[run.level])}`;
   }
   $("bMsl").classList.toggle("on", locked());
   $("planes").classList.toggle("hidden", !idleAtHome());

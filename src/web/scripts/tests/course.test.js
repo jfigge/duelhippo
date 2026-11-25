@@ -17,7 +17,7 @@
  * with Duel Hippo. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// course.test.js — the obstacle course: fifty rings flown in order against
+// course.test.js — the obstacle course: thirty rings flown in order against
 // the clock; three levels, each closer and tighter, each opened by finishing
 // the one before; its own table, apart from the best score. Port only.
 
@@ -30,7 +30,7 @@ const { w, duel } = game;
 const P = duel.P,
   S = duel.S;
 const $ = (id) => w.document.getElementById(id);
-const { COURSES, run } = await import("../course.js");
+const { COURSES, run, PERFECT, LIMITS } = await import("../course.js");
 const { COURSE } = await import("../constants.js");
 const { mapNow } = await import("../maps.js");
 const msg = () => $("msg").textContent;
@@ -55,15 +55,15 @@ function through(i, off = 0, back = 25) {
   game.run(900);
 }
 
-test("three courses of fifty rings, each closer and tighter than the last", () => {
+test("three courses of thirty rings, each closer and tighter than the last", () => {
   COURSES.forEach((rings, lv) => {
     const { gap, turn } = COURSE.levels[lv];
-    assert.equal(rings.length, 50);
+    assert.equal(rings.length, 30);
     for (const { c } of rings) {
       assert.ok(c.y >= 40 && c.y <= 240, `ring at ${c.y} m`);
       assert.ok(Math.hypot(c.x - 1400, c.z) < 2700, "over the flat");
     }
-    for (let i = 1; i < 50; i++) {
+    for (let i = 1; i < 30; i++) {
       const d = rings[i].c.distanceTo(rings[i - 1].c);
       assert.ok(
         d > gap[0] - 10 && d < gap[1] + 10,
@@ -79,6 +79,17 @@ test("three courses of fifty rings, each closer and tighter than the last", () =
   const span = (lv) => COURSES[lv].at(-1).c.distanceTo(COURSES[lv][0].c);
   assert.ok(COURSE.levels[2].gap[1] < COURSE.levels[0].gap[0], "closer");
   assert.ok(span(0) > 0 && span(2) > 0);
+});
+
+test("each level's time limit is twice a perfect run's time", () => {
+  COURSES.forEach((rings, lv) => {
+    let d = 0;
+    for (let i = 1; i < rings.length; i++)
+      d += rings[i].c.distanceTo(rings[i - 1].c);
+    assert.ok(Math.abs(PERFECT[lv] - d / 88) < 1e-9, "at the Kite's 88 m/s");
+    assert.equal(LIMITS[lv], Math.ceil(2 * PERFECT[lv]));
+  });
+  assert.ok(LIMITS[0] > LIMITS[1] && LIMITS[1] > LIMITS[2], "shorter courses");
 });
 
 test("a new player can fly the Easy level only, and has an empty table", () => {
@@ -115,12 +126,17 @@ test("the course: rings in order, a miss says go round, no enemies", () => {
 });
 
 test("finishing: the score, a time bonus, the table, and Tight opens", () => {
-  for (let i = 2; i < 50; i++) through(i);
+  for (let i = 2; i < 30; i++) through(i);
   assert.equal(duel.state, "over");
   assert.match($("oTitle").textContent, /Course complete/);
-  assert.equal($("oKills").textContent, "50/50");
+  assert.equal($("oKills").textContent, "30/30");
   assert.ok(run.bonus > 0);
-  assert.equal(run.score, 5000 + run.bonus);
+  assert.equal(run.score, 3000 + run.bonus);
+  assert.equal(
+    run.bonus,
+    Math.round((LIMITS[0] - run.t) * COURSE.bonus),
+    "10 points a second left",
+  );
   assert.match($("oUnlock").textContent, /Next level open: Tight/);
   assert.equal($("oCourse").querySelectorAll("li").length, 1);
   assert.ok($("oCourse").querySelector("li.mine"));
@@ -144,4 +160,25 @@ test("Tight is its own course, closer together, at twice the points", () => {
   assert.match($("oTitle").textContent, /Out of planes/);
   assert.match($("oCourse").textContent, /Tight · unfinished/);
   assert.ok($("oUnlock").classList.contains("hidden"));
+});
+
+test("too slow: the time runs out, unfinished, and nothing opens", () => {
+  level(0).click();
+  $("cFly").click();
+  through(0);
+  game.poke((P) => (P.dmg = 0));
+  for (let t = 0; t <= LIMITS[0] && duel.state === "play"; t += 10) {
+    game.poke((P) => {
+      P.alive = true;
+      P.grounded = false;
+      P.pos.set(1400, 150, 0);
+      P.sink = 0;
+    });
+    game.run(10000);
+  }
+  assert.equal(duel.state, "over");
+  assert.match($("oTitle").textContent, /Out of time/);
+  assert.equal($("oKills").textContent, "1/30");
+  assert.ok($("oUnlock").classList.contains("hidden"), "nothing opened");
+  assert.match($("oCourse").textContent, /unfinished/);
 });

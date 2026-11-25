@@ -23,7 +23,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadPort } from "./harness.js";
+import { loadPort, FRAME_MS } from "./harness.js";
 
 const game = await loadPort(4);
 const { w, duel } = game;
@@ -65,6 +65,29 @@ test("the Storm: the Countryside's ground, gusts that throw the plane, lightning
   }
   assert.ok(P.q.angleTo(q) > 0.05, "knocked off its line");
   assert.ok(flashed, "lightning within 15 s");
+});
+
+test("the Storm: gusts of wind blow the plane sideways, and say from where", () => {
+  pick("storm");
+  game.start("free");
+  cruise(1400, 300, 1500);
+  // How far the plane moves that its own velocity does not explain, frame
+  // by frame: the wind's doing.
+  const dt = FRAME_MS / 1000;
+  let blown = 0,
+    warned = false;
+  for (let i = 0; i < 30 / dt; i++) {
+    const was = P.pos.clone();
+    game.run(FRAME_MS);
+    const by = P.pos.clone().sub(was).addScaledVector(P.vel, -dt);
+    blown += Math.hypot(by.x, by.z);
+    game.poke((P) => (P.dmg = 0));
+    warned ||= /Gust (from the (left|right)|from behind|head-on)/.test(
+      $("msg").textContent,
+    );
+  }
+  assert.ok(warned, "a gust was called out");
+  assert.ok(blown > 8, `blown ${blown.toFixed(1)} m sideways in 30 s`);
 });
 
 test("the Night raid: caught in a searchlight, the flak follows", () => {

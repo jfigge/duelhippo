@@ -19,10 +19,17 @@
 
 // maps/storm.js — the Storm: the Countryside under a thunderstorm. Rain
 // closes the view to about a kilometre (the radar sees further than you
-// do), gusts throw the plane about, and lightning blinds you for a moment.
+// do), turbulence throws the plane about, gusts of wind blow it sideways,
+// and lightning blinds you for a moment.
 
 const GUST = 0.35; // rad/s of buffeting, at most, about each axis
 const RAIN = 1400; // streaks, kept round the camera
+// Wind gusts: every `every` s (a range), one blows for `last` s from a
+// random side, building to `peak` m/s of sideways push and dying away; the
+// rain slants with it and streaks of spray race past. `warn` s before it
+// arrives the player is told which side it comes from.
+const WIND = { every: [6, 13], last: [1.8, 3.2], peak: [9, 16], warn: 0.8 };
+const STREAKS = 160;
 
 export default function build(kit) {
   const { THREE, scene, camera, P, sfx } = kit;
@@ -50,12 +57,22 @@ export default function build(kit) {
     tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0.25)),
     one = new THREE.Vector3(1, 1, 1),
     at = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0),
+    slant = new THREE.Vector3();
+  // The rain blows with the wind: a steady breeze, and the gust on top.
   function fall(dt) {
+    const wx = 18 + wind.dir.x * wind.now * 2.5,
+      wz = wind.dir.z * wind.now * 2.5;
+    tilt.setFromUnitVectors(UP, slant.set(-wx, 70, -wz).normalize());
     drops.forEach((d, i) => {
       d[1] -= 70 * dt;
-      d[0] += 18 * dt;
+      d[0] += wx * dt;
+      d[2] += wz * dt;
       if (d[1] < 0) d[1] += 120;
-      if (d[0] > 80) d[0] -= 160;
+      for (const k of [0, 2]) {
+        if (d[k] > 80) d[k] -= 160;
+        if (d[k] < -80) d[k] += 160;
+      }
       at.set(
         camera.position.x + d[0],
         camera.position.y - 60 + d[1],
@@ -64,6 +81,118 @@ export default function build(kit) {
       rain.setMatrixAt(i, mx.compose(at, tilt, one));
     });
     rain.instanceMatrix.needsUpdate = true;
+  }
+
+  // ── Wind gusts ───────────────────────────────────────────────────────────
+  // `now` is the gust's push (m/s) this frame, along `dir` (level, unit).
+  const wind = {
+    next: 4,
+    t: 0,
+    last: 0,
+    peak: 0,
+    now: 0,
+    warned: false,
+    dir: new THREE.Vector3(1, 0, 0),
+  };
+  const pick = ([a, b]) => a + Math.random() * (b - a);
+  const right = new THREE.Vector3(),
+    fwd = new THREE.Vector3(),
+    tq2 = new THREE.Quaternion();
+  function blow(dt) {
+    if (wind.last <= 0) {
+      if ((wind.next -= dt) > 0) {
+        if (wind.next < WIND.warn && !wind.warned) warn();
+        return;
+      }
+      if (!wind.warned) warn();
+      wind.last = pick(WIND.last);
+      wind.peak = pick(WIND.peak);
+      wind.t = 0;
+    }
+    wind.t += dt;
+    // Up and back down: a gust builds, holds, and dies away.
+    const k = Math.min(1, wind.t / wind.last);
+    wind.now = wind.peak * Math.sin(Math.PI * k) ** 0.6;
+    if (k >= 1) {
+      wind.last = wind.now = 0;
+      wind.next = pick(WIND.every);
+      wind.warned = false;
+    }
+    if (!P.alive || P.grounded) return;
+    // Sideways: the plane is carried with the air, and the gust under one
+    // wing rolls it away from the side it comes from.
+    P.pos.addScaledVector(wind.dir, wind.now * dt);
+    right.set(1, 0, 0).applyQuaternion(P.q);
+    const side = right.dot(wind.dir); // > 0: blowing from the left
+    P.q.multiply(
+      tq2.setFromAxisAngle(fwd.set(0, 0, 1), -side * wind.now * 0.03 * dt),
+    );
+    P.q.normalize();
+  }
+  // A new gust's side, said as the player sees it, a moment before it hits.
+  function warn() {
+    const a = Math.random() * Math.PI * 2;
+    wind.dir.set(Math.cos(a), 0, Math.sin(a));
+    wind.warned = true;
+    if (!P.alive || P.grounded) return;
+    right.set(1, 0, 0).applyQuaternion(P.q).setY(0).normalize();
+    fwd.set(0, 0, -1).applyQuaternion(P.q).setY(0).normalize();
+    const across = right.dot(wind.dir),
+      along = fwd.dot(wind.dir);
+    kit.say(
+      Math.abs(across) > Math.abs(along)
+        ? `Gust from the ${across > 0 ? "left" : "right"}!`
+        : along > 0
+          ? "Gust from behind!"
+          : "Gust head-on!",
+      1.4,
+    );
+  }
+
+  // Streaks of spray racing past with a gust, round the camera: seen only
+  // while it blows, the stronger the brighter.
+  const streaks = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(16, 0.09, 0.09),
+    new THREE.MeshBasicMaterial({
+      color: 0xe8eef5,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    }),
+    STREAKS,
+  );
+  streaks.frustumCulled = false;
+  const spray = Array.from({ length: STREAKS }, () => [
+      (rand() - 0.5) * 140,
+      (rand() - 0.5) * 50,
+      (rand() - 0.5) * 140,
+    ]),
+    along = new THREE.Quaternion(),
+    X = new THREE.Vector3(1, 0, 0),
+    stretch = new THREE.Vector3();
+  function race(dt) {
+    const k = wind.now / 16;
+    streaks.material.opacity = 0.55 * k;
+    streaks.visible = k > 0.02;
+    if (!streaks.visible) return;
+    along.setFromUnitVectors(X, wind.dir);
+    stretch.set(0.5 + k, 1, 1);
+    const v = 40 + wind.now * 5;
+    spray.forEach((d, i) => {
+      d[0] += wind.dir.x * v * dt;
+      d[2] += wind.dir.z * v * dt;
+      for (const j of [0, 2]) {
+        if (d[j] > 70) d[j] -= 140;
+        if (d[j] < -70) d[j] += 140;
+      }
+      at.set(
+        camera.position.x + d[0],
+        camera.position.y + d[1],
+        camera.position.z + d[2],
+      );
+      streaks.setMatrixAt(i, mx.compose(at, along, stretch));
+    });
+    streaks.instanceMatrix.needsUpdate = true;
   }
 
   // Gusts: a slowly wandering turn about each of the plane's own axes, so
@@ -110,7 +239,9 @@ export default function build(kit) {
     country: true,
     land: {
       tick(dt) {
+        blow(dt);
         fall(dt);
+        race(dt);
         buffet(dt);
         lightning(dt);
       },
@@ -120,11 +251,16 @@ export default function build(kit) {
     below: 0x3e4a35,
     light: [0.55, 0.35],
     enter() {
-      scene.add(rain);
+      scene.add(rain, streaks);
+      wind.last = wind.now = 0;
+      wind.next = 4;
+      wind.warned = false;
       fall(0);
+      race(0);
     },
     leave() {
       rain.removeFromParent();
+      streaks.removeFromParent();
       flash()?.classList.remove("on");
     },
   };

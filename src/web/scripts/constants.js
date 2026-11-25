@@ -85,11 +85,11 @@ export const UNLOCK = Object.fromEntries(
 // levels, each its own course, the same every time: the rings closer
 // together (`gap`, m) and the turns between them tighter (`turn`, rad, at
 // most; `climb`, rad, at most) as they go. Harder levels score more a ring
-// (`pts`), and finishing one opens the next. Finishing adds a time bonus:
-// `bonus` points a second under the level's `par` seconds, times its
-// `pts` / 100.
+// (`pts`), and finishing one opens the next. Each level has a time limit:
+// `slack` times a perfect run's time (course.js LIMITS). Finishing adds a
+// time bonus: `bonus` points a second left, times the level's `pts` / 100.
 export const COURSE = {
-  rings: 50,
+  rings: 30,
   r: 18,
   levels: [
     {
@@ -98,7 +98,6 @@ export const COURSE = {
       turn: 0.52,
       climb: 0.12,
       pts: 100,
-      par: 480,
     },
     {
       name: "Tight",
@@ -106,7 +105,6 @@ export const COURSE = {
       turn: 0.8,
       climb: 0.17,
       pts: 200,
-      par: 360,
     },
     {
       name: "Twisting",
@@ -114,9 +112,9 @@ export const COURSE = {
       turn: 1.05,
       climb: 0.22,
       pts: 300,
-      par: 260,
     },
   ],
+  slack: 2,
   bonus: 10,
 };
 export const COURSE_KEY = "duelhippo.course";

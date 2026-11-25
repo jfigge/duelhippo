@@ -17,7 +17,7 @@
  * with Duel Hippo. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// course.js — the obstacle course (constants.js COURSE): fifty rings over
+// course.js — the obstacle course (constants.js COURSE): thirty rings over
 // the Countryside, flown in order against the clock, at one of three
 // levels: each a course of its own, tighter than the last.
 //
@@ -28,7 +28,7 @@
 // board's, and its scores do not count toward opening maps.
 
 import * as THREE from "three";
-import { CX, COURSE, COURSE_KEY } from "./constants.js";
+import { CX, COURSE, COURSE_KEY, PLANES } from "./constants.js";
 import { scene, put } from "./scene.js";
 import { say } from "./msg.js";
 import { sfx } from "./audio.js";
@@ -82,6 +82,18 @@ function layout(level) {
   return out;
 }
 export const COURSES = COURSE.levels.map((_, i) => layout(i));
+
+// A perfect run of each level (s): from the first ring, where the clock
+// starts, to the last, straight from each ring's middle to the next at the
+// Kite's top level speed. Each level's time limit is COURSE.slack times
+// that, rounded up to the second.
+export const PERFECT = COURSES.map((rings) => {
+  let d = 0;
+  for (let i = 1; i < rings.length; i++)
+    d += rings[i].c.distanceTo(rings[i - 1].c);
+  return d / PLANES[0].top;
+});
+export const LIMITS = PERFECT.map((t) => Math.ceil(t * COURSE.slack));
 
 // ── The record ──────────────────────────────────────────────────────────────
 // {open: the highest level open (0: Easy only), best: [{n, s, z (the
@@ -158,6 +170,7 @@ export function startCourse(level) {
   run.t = 0;
   run.score = 0;
   run.done = false;
+  run.out = false;
   draw();
   scene.add(group);
   last.copy(P.pos);
@@ -169,12 +182,17 @@ export function endCourse() {
 
 // Once a frame in play: the clock, and whether the plane went through the
 // next ring since the last frame (its path crossed the ring's plane, the
-// right way, inside the hole). Returns true when the last ring is flown.
+// right way, inside the hole). Returns "done" when the last ring is flown,
+// "out" when the time limit runs out first.
 const last = new THREE.Vector3(),
   hit = new THREE.Vector3();
 export function updCourse(dt) {
   if (!run.on || run.done) return false;
   if (run.next > 0) run.t += dt;
+  if (run.t > LIMITS[run.level]) {
+    run.out = true;
+    return "out";
+  }
   P.fuel = 100; // the course is about flying, not fuel
   const RINGS = COURSES[run.level],
     ring = RINGS[run.next],
@@ -203,13 +221,13 @@ export function updCourse(dt) {
 
 function finish() {
   run.done = true;
-  const { pts, par } = COURSE.levels[run.level];
+  const { pts } = COURSE.levels[run.level];
   run.bonus = Math.max(
     0,
-    Math.round(((par - run.t) * COURSE.bonus * pts) / 100),
+    Math.round(((LIMITS[run.level] - run.t) * COURSE.bonus * pts) / 100),
   );
   run.score += run.bonus;
-  return true;
+  return "done";
 }
 
 // The flight's score into the table (top ten), and the next level opened

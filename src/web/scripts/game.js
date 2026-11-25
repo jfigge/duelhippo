@@ -89,6 +89,7 @@ import {
   recordCourse,
   courseBest,
   levelOpen,
+  LIMITS,
   clock,
 } from "./course.js";
 import { player } from "./scores.js";
@@ -142,7 +143,10 @@ function update(dt) {
   // A map's weather, flak and moving targets; none on the Countryside.
   if (land.tick) land.tick(dt);
   // The obstacle course: the clock, and the rings flown.
-  if (run.on && updCourse(dt)) courseOver(true);
+  if (run.on) {
+    const end = updCourse(dt);
+    if (end) courseOver(end === "done");
+  }
 }
 
 // ── Game flow ───────────────────────────────────────────────────────────────
@@ -224,7 +228,7 @@ export function startGame(m) {
     net.on
       ? INTRO[net.mode]
       : course
-        ? "Take off and fly through the yellow ring. The clock starts there"
+        ? `Take off and fly through the yellow ring. Then ${clock(LIMITS[courseSize])} for the rest`
         : isTouch
           ? "Push the throttle up, then pull back on the stick to lift off"
           : "W to throttle up, then Down arrow to lift off",
@@ -259,7 +263,7 @@ function openCourse() {
       name.textContent = z.name;
       const note = document.createElement("i");
       note.textContent = levelOpen(i)
-        ? `${z.pts} a ring`
+        ? `${z.pts} a ring · ${clock(LIMITS[i])} to finish`
         : `Finish ${COURSE.levels[i - 1].name} first`;
       b.append(name, note);
       b.disabled = !levelOpen(i);
@@ -320,7 +324,11 @@ function courseOver(done) {
   P.obj.visible = false;
   const { rank, opened } = recordCourse(player().n);
   overScreen(false);
-  $("oTitle").textContent = done ? "Course complete!" : "Out of planes";
+  $("oTitle").textContent = done
+    ? "Course complete!"
+    : run.out
+      ? "Out of time"
+      : "Out of planes";
   $("oScore").textContent = run.score.toLocaleString("en");
   $("oSecond").textContent = "Rings";
   $("oKills").textContent = `${run.next}/${COURSE.rings}`;
