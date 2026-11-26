@@ -84,7 +84,7 @@ test("F, a half-second countdown, the keys in order: the damage is gone, not the
   wait(500);
   assert.match($("repair").textContent, /1…/);
   wait(500);
-  assert.equal(fix.stage, "keys");
+  assert.equal(fix.stage, "steps");
   assert.equal(fix.seq.length, runLength(40));
   for (const n of fix.seq) {
     assert.ok(Number.isInteger(n) && n >= 0 && n <= 9, "a plain number");
@@ -119,7 +119,7 @@ test("1.75 s for each key, and no more", () => {
   game.press("KeyF");
   wait(COUNT + 50);
   wait(1600);
-  assert.equal(fix.stage, "keys", "still time at 1.6 s");
+  assert.equal(fix.stage, "steps", "still time at 1.6 s");
   num(fix.seq[0]);
   assert.equal(fix.i, 1);
   wait(REPAIR.per * 1000 + 100);

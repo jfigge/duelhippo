@@ -253,6 +253,22 @@ body.cockpit #card .dash {
   height: 100%;
   background: #ffe66b;
 }
+/* A landscape phone: up top it would sit on the button row and the
+   messages; lower, between the stick and the buttons, and smaller. */
+@media (max-height: 520px) {
+  #repair {
+    top: 66%;
+    min-width: 0;
+    padding: 8px 18px 10px;
+    gap: 4px;
+  }
+  #repair b {
+    font-size: 40px;
+  }
+  #repair small {
+    font-size: 12px;
+  }
+}
 body[data-mode="classic"] #radar,
 body[data-mode="free"] #strip {
   display: none;
@@ -681,24 +697,48 @@ body[data-mode="classic"] #bMsl {
 #bPause {
   top: calc(50% + 4px);
 }
+/* Weather (T on a keyboard), above CAM; and above that FIX (F), shown only
+   while a repair can begin (repair.js), in amber. */
+#bWx {
+  top: calc(50% - 104px);
+}
+#bFix {
+  top: calc(50% - 158px);
+  background: rgba(255, 176, 48, 0.6);
+  border-color: rgba(255, 220, 140, 0.9);
+}
 /* A landscape phone is too short for the CAM / pause pair at mid-height: on
    an iPhone (390 px tall) the pause button lands on the top of the throttle
-   slider, so pushing to full throttle pauses the game. Move the pair to a row
-   along the top edge — left of the radar in free flight, where the radar
-   holds the corner. */
+   slider, so pushing to full throttle pauses the game. Move them, and the
+   FIX and weather buttons, to a row along the top edge (FIX beside CAM) —
+   left of the radar in free flight, where the radar holds the corner. */
 @media (max-height: 520px) {
   .mini {
     top: calc(12px + var(--st));
   }
-  #bPause {
+  #bFix {
     top: calc(12px + var(--st));
     right: calc(80px + var(--sr));
+  }
+  #bWx {
+    top: calc(12px + var(--st));
+    right: calc(146px + var(--sr));
+  }
+  #bPause {
+    top: calc(12px + var(--st));
+    right: calc(212px + var(--sr));
   }
   body[data-mode="free"] #bCam {
     right: calc(140px + var(--sr));
   }
-  body[data-mode="free"] #bPause {
+  body[data-mode="free"] #bFix {
     right: calc(206px + var(--sr));
+  }
+  body[data-mode="free"] #bWx {
+    right: calc(272px + var(--sr));
+  }
+  body[data-mode="free"] #bPause {
+    right: calc(338px + var(--sr));
   }
 }
 body.touch #card {

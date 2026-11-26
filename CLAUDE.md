@@ -112,9 +112,13 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   a flight, on a plane hurt short of 100: a quick countdown, then number
   keys, 1.75 s each. Meanwhile no plane's fire hurts it and the flyers
   hold theirs (`repairing()` in `ai.js`, `weapons.js`, `missiles.js`);
-  ground flak still does. Its numbers come from `crypto`, never
-  `Math.random`. Fullscreen moved from F to G. Tested in
-  `repair.test.js`.
+  ground flak still does. On a touch screen the FIX button (shown only
+  while `canRepair()`) starts a run of moves of the phone instead, 3 s
+  each: shakes up and down, back and forth, side to side, or a turn
+  (`motion.js` reads `devicemotion`; iOS asks permission from the tap). Its
+  numbers and moves come from `crypto`, never `Math.random`. Fullscreen
+  moved from F to G. Tested in `repair.test.js`, `repair-phone.test.js`
+  and `motion.test.js`.
 - **Night raid nav lights** (`NAV`, `navOn` in `world.js`): red to port,
   green to starboard on every plane, sharing two materials that only the
   Night raid shows. Shared, so `dispose` and `ghostly` leave them be.
@@ -194,6 +198,7 @@ Rules that follow from this:
 - `cockpit`: the cockpit view's dashboards
 - `weather`: what each weather does to a map
 - `repair`: fixing the plane in flight
+- `motion`: the phone's shakes and turns, for a repair by phone
 - `about`: the About card, after Rest Hippo's and Chip Hippo's; the title's
   About button and the desktop menu open it, and it pauses a game under it.
   The sponsor link is left off on iOS (App Store Guideline 3.1.1)

@@ -91,6 +91,29 @@ test("T steps sunny, foggy, stormy, snowy and back; sunny is the map as it is", 
   assert.deepEqual(after, clear, "the Countryside exactly as it was");
 });
 
+test("the touch screen's weather button steps it too, and shows it", () => {
+  pick("field");
+  game.start("free");
+  assert.equal($("bWx").textContent, "SUN");
+  $("bWx").click();
+  assert.equal(weatherNow(), "foggy");
+  assert.equal($("bWx").textContent, "FOG");
+  assert.equal($("bWx").getAttribute("aria-label"), "Weather: Foggy");
+  for (const tag of ["RAIN", "SNOW", "SUN"]) {
+    $("bWx").click();
+    assert.equal($("bWx").textContent, tag);
+  }
+  // On the Sea it shows the Sea's own fog, and a tap leaves it.
+  pick("sea");
+  game.start("free");
+  assert.equal($("bWx").textContent, "FOG");
+  $("bWx").click();
+  assert.equal($("bWx").textContent, "FOG");
+  assert.match(msg(), /Sea fog never lifts/);
+  pick("field");
+  game.start("free");
+});
+
 test("the weather is remembered", () => {
   game.press("KeyT");
   assert.equal(opt.weather, "foggy");

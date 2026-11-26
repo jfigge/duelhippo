@@ -84,6 +84,13 @@ export const WEATHER_NAMES = {
   stormy: "Stormy",
   snowy: "Snowy",
 };
+// The touch screen's weather button shows the weather in a word that fits.
+export const WEATHER_TAGS = {
+  sunny: "SUN",
+  foggy: "FOG",
+  stormy: "RAIN",
+  snowy: "SNOW",
+};
 export const WEATHER_KEY = "duelhippo.weather";
 // The maps whose weather never changes, and what it is.
 export const FIXED_WEATHER = { storm: "stormy", sea: "foggy" };
@@ -91,7 +98,9 @@ export const FIXED_WEATHER = { storm: "stormy", sea: "foggy" };
 // ── Repair in flight ────────────────────────────────────────────────────────
 // Not part of the prototype. F, once a flight, on a plane hurt but still
 // flying: a countdown from `count`, `tick` s a number, then a run of number
-// keys to press, `per` s each. The run is `min` keys on a scratched plane,
+// keys to press, `per` s each; or, started from the touch screen's FIX
+// button, a run of moves of the phone, `move` s each (a shake takes longer
+// than a key). The run is `min` keys on a scratched plane,
 // one more for every `step` % of damage (to the nearest), `max` at most.
 // Got right, the damage is gone (not the fuel or the rounds). While it runs
 // no other plane's fire can touch the plane (repair.js).
@@ -99,9 +108,24 @@ export const REPAIR = {
   count: 3,
   tick: 0.5,
   per: 1.75,
+  move: 3,
   min: 4,
   step: 25,
   max: 8,
+};
+
+// What counts as a move of the phone (motion.js), in m/s² of the phone's own
+// acceleration, gravity taken out. A shake is `turns` + 1 swings, each past
+// `shake`, alternating, within `window` s, along one line, and at least
+// `dominant` times stronger than along the other two: a hand's firm shake is
+// 15–30 m/s², the wobble of holding a phone a few. Held upright, gravity lies
+// along the phone's long side: more than `upright` of it.
+export const MOTION = {
+  shake: 8,
+  turns: 2,
+  window: 0.8,
+  dominant: 1.6,
+  upright: 0.8,
 };
 
 // Maps are earned: each opens once the best one-player score (any mode) is

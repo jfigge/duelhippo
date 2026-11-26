@@ -39,6 +39,7 @@ import {
   COURSE,
   WEATHERS,
   WEATHER_NAMES,
+  WEATHER_TAGS,
   WEATHER_KEY,
 } from "./constants.js";
 import { scene, camera } from "./scene.js";
@@ -82,6 +83,7 @@ import { updCockpit, cockpitOn, dash } from "./cockpit.js";
 import {
   startRepair,
   repairKey,
+  repairMove,
   repairing,
   updRepair,
   resetRepair,
@@ -92,7 +94,14 @@ import { net, myTeam, isMode } from "./net/bus.js";
 import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
 import { TEAM, MODES } from "./net/teams.js";
 import { PLANES } from "./constants.js";
-import { useMap, startMap, mapNow, setWeather, weatherFixed } from "./maps.js";
+import {
+  useMap,
+  startMap,
+  mapNow,
+  setWeather,
+  weatherFixed,
+  weatherNow,
+} from "./maps.js";
 import {
   run,
   startCourse,
@@ -204,6 +213,7 @@ export function startGame(m) {
   sfx.init();
   sfx.resume();
   document.body.dataset.mode = game.mode;
+  showWeather();
   Object.assign(S, {
     score: 0,
     kills: 0,
@@ -789,7 +799,17 @@ function cycleWeather() {
     // No storage: the weather lasts the session.
   }
   setWeather(opt.weather);
+  showWeather();
   say("Weather: " + WEATHER_NAMES[opt.weather], 1.2);
+}
+
+// The touch screen's weather button: the weather flown in, which on the
+// Storm, the Sea or in a match may not be the player's own choice.
+function showWeather() {
+  const w = weatherNow(),
+    b = $("bWx");
+  b.textContent = WEATHER_TAGS[w];
+  b.setAttribute("aria-label", "Weather: " + WEATHER_NAMES[w]);
 }
 
 // Going full screen hides the page for a moment: on macOS the window moves
@@ -987,6 +1007,7 @@ export function boot({ createRenderer }) {
     fix: startRepair,
     repairing,
     repairKey,
+    repairMove,
   });
   initUI();
   initHud();

@@ -32,6 +32,7 @@
 import { $, clamp, setLabel } from "./util.js";
 import { game, opt } from "./state.js";
 import { sfx } from "./audio.js";
+import { listenMotion, askMotion } from "./motion.js";
 
 export const isTouch =
   window.matchMedia("(pointer:coarse)").matches || "ontouchstart" in window;
@@ -51,8 +52,8 @@ const PREVENT = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"];
 
 // The game actions presses trigger; set by bindInput():
 // { enter, togglePause, toggleFull, dropBomb, flip, stepSpeed, toggleInvert,
-//   pickPlane, stepPlane, fireMissile, stepCam, cycleWeather, fix,
-//   repairing, repairKey }
+//   pickPlane, stepPlane, fireMissile, stepCam, cycleWeather,
+//   fix(touch, allowed), repairing, repairKey, repairMove }
 let act = null;
 
 export function releaseKeys() {
@@ -277,6 +278,15 @@ export function bindInput(actions) {
   });
   $("bFlip").addEventListener("pointerdown", () => act.flip());
   $("bCam").addEventListener("click", () => act.stepCam());
+  $("bWx").addEventListener("click", () => act.cycleWeather());
+  // FIX: a repair by moves of the phone. iOS lets a page read the motion
+  // sensors only if asked from inside a tap, so it is asked here.
+  $("bFix").addEventListener("click", () => {
+    askMotion().then((ok) => act.fix(true, ok));
+  });
+  listenMotion((kind) => {
+    if (act.repairing()) act.repairMove(kind);
+  });
   $("bPause").addEventListener("click", () => act.togglePause());
 
   // A sideways swipe across the scene changes plane, as < and > do: left
