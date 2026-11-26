@@ -134,7 +134,7 @@ test("no lock in Classic: there are no sights", () => {
   game.press("KeyR");
   game.up("ShiftLeft");
   assert.equal(lock.t, 0);
-  assert.match(msg(), /Free flight only/);
+  assert.match(msg(), /not in Classic/);
 });
 
 // Another player's missile, launched `dist` m behind this plane at it.

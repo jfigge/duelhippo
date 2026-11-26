@@ -1041,39 +1041,20 @@ body.touch .tk {
   margin: 20px 0 10px;
   gap: 10px;
 }
+/* The four ways to play, all alike: none is more important than another. */
 #titleBody .mode {
-  padding: 16px 18px;
+  padding: 13px 16px;
 }
 #titleBody .mode b {
-  font-size: 20px;
+  margin-bottom: 2px;
+  font-size: 18px;
 }
-/* The two small ways to play: slimmer, the accent on the name only, the
-   blurb under it. */
-#titleBody .mode.course,
-#titleBody .mode.online {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 11px 16px;
-  border-width: 1px;
-  border-color: color-mix(in srgb, var(--c) 55%, transparent);
-  box-shadow: none;
-  background: rgba(16, 20, 40, 0.6);
-}
-#titleBody .mode.course b,
-#titleBody .mode.online b {
-  flex: none;
-  margin: 0;
-  font-size: 15px;
+#titleBody .mode span {
+  font-size: 14px;
 }
 #titleBody .mode b i {
   font-style: normal;
   margin-right: 2px;
-}
-#titleBody .mode.course span,
-#titleBody .mode.online span {
-  margin: 0;
-  font-size: 13px;
 }
 /* The map: ‹ name ›, and under it how many are open and what opens the
    next. The name opens every map's button below. */
@@ -1227,18 +1208,12 @@ body.touch .tk {
     margin: 8px 0;
     gap: 10px;
   }
-  /* The four ways to play in one row, the two main ones wider; one line
-     of blurb each, and none on the two small ones. */
+  /* The four ways to play in one row, alike: the names only, no room
+     for the blurbs. */
   #titleBody .modes {
-    grid-template-columns: 1.4fr 1.4fr 1fr 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   #titleBody .mode span {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  #titleBody .mode.course span,
-  #titleBody .mode.online span {
     display: none;
   }
   #titleBody {
@@ -1250,25 +1225,16 @@ body.touch .tk {
   #titleBody h1 {
     font-size: 30px;
   }
+  /* Narrow tiles here: the name, wrapped and centred. */
   #titleBody .mode {
-    padding: 10px 12px;
-  }
-  #titleBody .mode b {
-    font-size: 17px;
-  }
-  /* The two small ones stand as narrow tiles here: the name, wrapped. */
-  #titleBody .mode.course,
-  #titleBody .mode.online {
-    flex-direction: column;
     justify-content: center;
     align-items: center;
     text-align: center;
     padding: 8px 10px;
   }
-  #titleBody .mode.course b,
-  #titleBody .mode.online b {
-    flex: initial;
-    font-size: 14px;
+  #titleBody .mode b {
+    margin: 0;
+    font-size: 15px;
   }
   #titleBody .head .tag {
     display: none;

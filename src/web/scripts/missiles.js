@@ -153,7 +153,7 @@ export function fireMissile() {
   if (game.state !== "play" || game.paused || !P.alive) return;
   if (!P.pt.missiles) return say(`The ${P.pt.name} carries no missiles`, 1.4);
   if (game.mode === "classic")
-    return say("Missiles need the sights: Free flight only", 1.4);
+    return say("Missiles need the sights: not in Classic", 1.4);
   if (!P.msl) return say("No missiles left: land at home to rearm", 1.4);
   if (!locked())
     return say("No lock: hold the sights on a plane for 3 seconds", 1.4);

@@ -641,7 +641,7 @@ const describe = () =>
   MODES[setup.mode] +
   " · " +
   MAPS[setup.map] +
-  " · Free flight" +
+  " · Full 3D" +
   (setup.ff ? " · Friendly fire" : "") +
   (setup.speed < 1 ? ` · ${Math.round(setup.speed * 100)}% speed` : "");
 
