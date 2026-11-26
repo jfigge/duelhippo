@@ -86,10 +86,10 @@ test("a full-screen blink does not pause the game", () => {
   assert.equal(paused(), false);
 });
 
-test("pressing F for full screen does not pause the game", () => {
+test("pressing G for full screen does not pause the game", () => {
   game.start("classic");
   game.run(100);
-  game.press("KeyF");
+  game.press("KeyG");
   setHidden(true);
   w.__advance(600); // macOS takes about this long
   setHidden(false);
@@ -98,7 +98,7 @@ test("pressing F for full screen does not pause the game", () => {
 
 test("actually leaving the game does pause it", () => {
   game.start("classic");
-  game.run(2000); // well clear of the F press above
+  game.run(2000); // well clear of the G press above
   setHidden(true);
   w.__advance(2000);
   setHidden(false);

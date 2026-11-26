@@ -53,6 +53,7 @@ import { say } from "./msg.js";
 import { groundY, makePlane, blob, syncShadow, land } from "./world.js";
 import { CX } from "./constants.js";
 import { P, crash } from "./flight.js";
+import { repairing } from "./repair.js";
 import { fire } from "./weapons.js";
 import { solidRemotes } from "./remote.js";
 import { net, send } from "./net/bus.js";
@@ -284,7 +285,8 @@ export function updEnemy(e, dt) {
   if (game.mode === "classic") e.pos.z = 0;
 
   e.cd -= dt;
-  if (hunting && e.cd <= 0) {
+  // A plane being repaired in flight is let be (repair.js).
+  if (hunting && e.cd <= 0 && !(T === P && repairing())) {
     tv.copy(T.pos).sub(e.pos);
     const d = tv.length();
     if (d < 420 && b.f.dot(tv.divideScalar(d)) > 0.982) {

@@ -113,6 +113,7 @@ function fakeRenderer(w) {
     domElement: w.document.createElement("canvas"),
     setPixelRatio() {},
     setSize() {},
+    clearDepth() {},
     render() {},
   };
 }

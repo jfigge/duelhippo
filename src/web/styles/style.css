@@ -209,6 +209,50 @@ kbd {
   height: 60px;
   border-radius: 10px;
 }
+/* The cockpit view (cockpit.js): its dashboard has the radar, throttle,
+   fuel and rounds, so the HUD's own go. */
+body.cockpit #radar,
+body.cockpit #card .dash {
+  display: none;
+}
+/* A repair in flight (repair.js): the countdown, then each key to press, in
+   the middle of the screen, with the time left for it below. */
+#repair {
+  position: absolute;
+  left: 50%;
+  top: 24%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 180px;
+  padding: 14px 26px 16px;
+  border-radius: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+#repair b {
+  font: 800 64px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: #ffe66b;
+}
+#repair small {
+  font: 600 14px/1.3 var(--sans);
+  opacity: 0.85;
+}
+#repair i {
+  display: block;
+  width: 140px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+#repair u {
+  display: block;
+  height: 100%;
+  background: #ffe66b;
+}
 body[data-mode="classic"] #radar,
 body[data-mode="free"] #strip {
   display: none;

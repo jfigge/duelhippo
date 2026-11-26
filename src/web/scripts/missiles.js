@@ -42,6 +42,7 @@ import { puff, boom } from "./effects.js";
 import { say } from "./msg.js";
 import { groundY } from "./world.js";
 import { P, aiming } from "./flight.js";
+import { repairing } from "./repair.js";
 import { enemies, killEnemy, ownsEnemy } from "./ai.js";
 import { remotes } from "./remote.js";
 import { net, send, canHurt } from "./net/bus.js";
@@ -73,6 +74,23 @@ function* quarries() {
   for (const e of enemies) if (e.alive) yield e;
   for (const r of remotes.values())
     if (r.alive && !r.ghost && canHurt(r.seat)) yield r;
+}
+
+// The nearest plane that can be hurt, of those quarries() offers, and how
+// far off (m): what the cockpit's enemy indicator points at (cockpit.js).
+// { foe: null, dist: Infinity } when there is none.
+const near = { foe: null, dist: Infinity };
+export function nearestFoe() {
+  near.foe = null;
+  near.dist = Infinity;
+  for (const t of quarries()) {
+    const d = t.pos.distanceTo(P.pos);
+    if (d < near.dist) {
+      near.foe = t;
+      near.dist = d;
+    }
+  }
+  return near;
 }
 
 // A target's name on the wire ("ms"): a seat, or "e" and a flyer's index.
@@ -266,7 +284,13 @@ function hit(m) {
     if (!ownsEnemy(t)) return send({ t: "eh", i: enemies.indexOf(t), n: 3 });
     t.hp -= 3;
     if (t.hp <= 0) killEnemy(t, true);
-  } else if (t === P && P.alive && !P.ghost && canHurt(m.seat)) {
+  } else if (
+    t === P &&
+    P.alive &&
+    !P.ghost &&
+    canHurt(m.seat) &&
+    !repairing() // under repair: let be (repair.js)
+  ) {
     P.hitBy = m.seat;
     P.dmg = Math.min(100, P.dmg + MSL.dmg);
     sfx.hit();

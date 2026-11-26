@@ -91,8 +91,35 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   value), so `HOME`, `EB` and the scene are the prototype's. A team game's
   map is the organiser's (`setup.map`). Maps are earned by the best
   one-player score (`UNLOCK` in `constants.js`, `mapOpen` in `state.js`),
-  on the title and for an organiser alike. Tested in `maps.test.js` and
-  `maps-unlock.test.js`.
+  on the title and for an organiser alike, in `MAPS` key order (the Sea,
+  Storm, Night raid and Canyon last); reordering `MAPS` means bumping
+  `PROTO`. Tested in `maps.test.js` and `maps-unlock.test.js`.
+- **Weather** (`weather.js`, `WEATHERS` in `constants.js`): T steps
+  sunny, foggy, stormy, snowy, remembered in `opt.weather`. `look()` in
+  `maps.js` passes each map's sky through `weathered()`; stormy brings the
+  Storm's own rain, gusts and lightning (`storm()` in `maps/storm.js`, no
+  gusts in Classic), snowy `maps/snow.js`. Sunny changes nothing and plugs
+  nothing into `land.tick`. The Storm and the Sea keep their own
+  (`FIXED_WEATHER`). In a team game the organiser picks (`setup.weather`)
+  and T does nothing. Tested in `weather.test.js`.
+- **Cockpit view** (`cockpit.js`): C's third view in Free flight
+  (`stepCam` in `camera.js`). The eye sits at each plane's seat
+  (`LAYOUTS`), the plane visible, and a dashboard per plane type (radar,
+  fuel, rounds, the throttle, an arrow to `nearestFoe()`) is drawn by
+  `game.js` in a second pass after `clearDepth()`. Tested in
+  `cockpit.test.js`.
+- **Repair in flight** (`repair.js`, `REPAIR` in `constants.js`): F, once
+  a flight, on a plane hurt short of 100: a quick countdown, then number
+  keys, 1.75 s each. Meanwhile no plane's fire hurts it and the flyers
+  hold theirs (`repairing()` in `ai.js`, `weapons.js`, `missiles.js`);
+  ground flak still does. Its numbers come from `crypto`, never
+  `Math.random`. Fullscreen moved from F to G. Tested in
+  `repair.test.js`.
+- **Night raid nav lights** (`NAV`, `navOn` in `world.js`): red to port,
+  green to starboard on every plane, sharing two materials that only the
+  Night raid shows. Shared, so `dispose` and `ghostly` leave them be.
+- **Canyon flak** does 0.4 of a round's damage (`hurt` through `flakAt`
+  and `fire`; 1 everywhere else).
 - **Obstacle course** (`course.js`). Thirty rings over the Countryside, laid
   out from a seeded generator, flown in order against the clock, at three
   levels (each its own course, the rings closer and the turns tighter),
@@ -164,6 +191,9 @@ Rules that follow from this:
   ring; pure), `config`
 - `game`: flow, update and boot
 - `main`: the browser entry point
+- `cockpit`: the cockpit view's dashboards
+- `weather`: what each weather does to a map
+- `repair`: fixing the plane in flight
 - `about`: the About card, after Rest Hippo's and Chip Hippo's; the title's
   About button and the desktop menu open it, and it pauses a game under it.
   The sponsor link is left off on iOS (App Store Guideline 3.1.1)

@@ -587,6 +587,13 @@ export default function build(kit) {
     fogTo(thick);
     blow(dt, thick);
   }
+  // The sky the blizzards ease back to: the map's own, in today's weather.
+  function relook() {
+    own.near = scene.fog.near;
+    own.far = scene.fog.far;
+    own.fog.copy(scene.fog.color);
+    own.sky.copy(scene.background);
+  }
   function fogTo(k) {
     scene.fog.near = own.near + (WHITEOUT[0] - own.near) * k;
     scene.fog.far = own.far + (WHITEOUT[1] - own.far) * k;
@@ -662,12 +669,14 @@ export default function build(kit) {
     light: [0.85, 0.8],
     enter() {
       settle();
-      own.near = scene.fog.near;
-      own.far = scene.fog.far;
-      own.fog.copy(scene.fog.color);
-      own.sky.copy(scene.background);
+      relook();
       thick = 0;
       inside = false;
+    },
+    // The weather changed: the blizzards ease back to its sky, not clear air.
+    relook() {
+      relook();
+      fogTo(thick);
     },
     // A new game: the clock from nought (so the convoy sets off up the
     // fjord from its start, and the blizzards from theirs), clear air.

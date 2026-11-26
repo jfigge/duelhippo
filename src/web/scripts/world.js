@@ -326,8 +326,66 @@ export function makePlane(body, wing, trim, dark, kind = 0) {
     put(g, c, sx, 1.79, -1.3);
   }
   g.userData.prop = put(g, box(0.22, 2.8, 0.08, 0x6b4a2a), 0, 0, -4.0);
+  navLights(g, 5.25, 1.7, -1.3);
   return g;
 }
+// Navigation lights: not part of the prototype. Red to port (-x), green to
+// starboard (+x), on the top wing's tips, each a lamp and a soft glow round
+// it that reads at a distance. Every plane shares the materials, which stay
+// hidden but on the Night raid (maps/night.js), so a plane built while it is
+// up (a new livery or type, a player joining) is lit with the rest. Shared,
+// so neither dispose() nor ghostly() touches them.
+const navGlow = (() => {
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = 32;
+  const c2 = cv.getContext("2d");
+  // No 2D canvas under the tests (or one that draws nothing): no glow.
+  const g = c2?.createRadialGradient(16, 16, 0, 16, 16, 16);
+  if (!g) return null;
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.35, "rgba(255,255,255,.45)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  c2.fillStyle = g;
+  c2.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(cv);
+})();
+const shared = (x) => ((x.userData.shared = true), x);
+const navKit = (color) => ({
+  lamp: shared(new THREE.MeshBasicMaterial({ color, visible: false })),
+  glow: shared(
+    new THREE.SpriteMaterial({
+      color,
+      map: navGlow,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      visible: false,
+    }),
+  ),
+});
+export const NAV = { port: navKit(0xff2a20), star: navKit(0x2aff50) };
+const navLamp = shared(new THREE.BoxGeometry(0.35, 0.3, 0.35));
+// Shows or hides every plane's navigation lights.
+export function navOn(on) {
+  for (const k of [NAV.port, NAV.star]) k.lamp.visible = k.glow.visible = on;
+}
+function navLights(g, x, y, z) {
+  for (const [s, k] of [
+    [-1, NAV.port],
+    [1, NAV.star],
+  ]) {
+    const lamp = new THREE.Mesh(navLamp, k.lamp);
+    lamp.position.set(s * (x + 0.1), y, z);
+    lamp.userData.nav = true;
+    const glow = new THREE.Sprite(k.glow);
+    glow.scale.set(2.6, 2.6, 1);
+    glow.position.set(s * (x + 0.25), y, z);
+    glow.userData.nav = true;
+    g.add(lamp, glow);
+  }
+}
+
 // The shared parts of the other plane types, laid out as makePlane does.
 const STRUT = 0x3a2a1a;
 function struts(g, xs, h, y, z) {
@@ -376,6 +434,7 @@ const planeKinds = {
     put(g, box(0.15, 0.5, 0.15, STRUT), 0, -0.85, 2.9);
     roundels(g, trim, 3, 1.54, -1);
     prop(g, 2.6, -3.15);
+    navLights(g, 4.1, 1.45, -1);
     return g;
   },
   // Lancer: a long-nosed parasol monoplane, its one wing on struts above.
@@ -396,6 +455,7 @@ const planeKinds = {
     put(g, box(0.15, 0.5, 0.15, STRUT), 0, -0.85, 3.8);
     roundels(g, trim, 4.2, 2.1, -0.9);
     prop(g, 2.9, -4.7);
+    navLights(g, 6, 2, -0.9);
     return g;
   },
   // Brute: a big biplane, two bays of struts a side, twin fins, bomb racks.
@@ -416,6 +476,7 @@ const planeKinds = {
     put(g, box(0.15, 0.6, 0.15, STRUT), 0, -1.1, 4);
     roundels(g, trim, 5, 2.2, -1.2);
     prop(g, 3.4, -4.45);
+    navLights(g, 7, 2.1, -1.2);
     return g;
   },
 };
@@ -423,7 +484,9 @@ const planeKinds = {
 // A player out of planes in Endless enemies flies a see-through ghost.
 export function ghostly(obj, on) {
   obj.traverse((o) => {
-    if (!o.material) return;
+    // A ghost shows no lights; they are shared, so are not made see-through.
+    if (o.userData.nav) o.visible = !on;
+    if (!o.material || SHARED(o.material)) return;
     o.material.transparent = on;
     o.material.opacity = on ? 0.35 : 1;
     o.material.depthWrite = !on;

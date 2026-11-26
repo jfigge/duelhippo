@@ -31,7 +31,12 @@ const RAIN = 1400; // streaks, kept round the camera
 const WIND = { every: [6, 13], last: [1.8, 3.2], peak: [9, 16], warn: 0.8 };
 const STREAKS = 160;
 
-export default function build(kit) {
+export default (kit) => storm(kit);
+
+// The storm itself, also what weather.js brings to any other map's sky.
+// `windy()` says whether the gusts and buffeting blow: not in Classic, whose
+// plane is held to its lane (the rain and lightning still come).
+export function storm(kit, windy = () => true) {
   const { THREE, scene, camera, P, sfx } = kit;
 
   // Rain: thin streaks in a box that follows the camera, falling and
@@ -247,10 +252,11 @@ export default function build(kit) {
     country: true,
     land: {
       tick(dt) {
-        blow(dt);
+        const w = windy();
+        if (w) blow(dt);
         fall(dt);
-        race(dt);
-        buffet(dt);
+        if (w) race(dt);
+        if (w) buffet(dt);
         lightning(dt);
       },
     },

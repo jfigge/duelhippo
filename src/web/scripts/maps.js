@@ -38,7 +38,17 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PI } from "./util.js";
-import { CX, HOME, EB, TDEF, SKY, MAPS, CITY, SEA } from "./constants.js";
+import {
+  CX,
+  HOME,
+  EB,
+  TDEF,
+  SKY,
+  MAPS,
+  CITY,
+  SEA,
+  FIXED_WEATHER,
+} from "./constants.js";
 import { scene, camera, M, box, put, flat } from "./scene.js";
 import { game } from "./state.js";
 import { say } from "./msg.js";
@@ -46,6 +56,7 @@ import { sfx } from "./audio.js";
 import { puff, boom } from "./effects.js";
 import { P, crash } from "./flight.js";
 import { fire } from "./weapons.js";
+import { weathered, weatherFx } from "./weather.js";
 import { MORE } from "./maps/index.js";
 import {
   land,
@@ -57,6 +68,7 @@ import {
   placeHippos,
   buildTargets,
   targets,
+  navOn,
 } from "./world.js";
 
 // The sky's light from below takes the ground's colour: grass on the
@@ -99,39 +111,76 @@ export const mapNow = () => current;
 //            once the map's town stands
 //   start()  a new game on it: what it moves (convoy, airships) and keeps
 //            (weather, wind) starts afresh, from time since then
+//   relook() the weather changed the sky under it (Arctic's blizzards ease
+//            back to the sky, so must know the new one)
+let here = COUNTRY; // the map in play, as useMap merged it
 export function useMap(id) {
   if (!MAPS[id]) id = "field";
   if (id === current) return;
+  fx?.leave();
+  fx = null;
   if (built[current]) {
     built[current].group?.removeFromParent();
     built[current].leave?.();
   }
   current = id;
-  const m = {
+  here = {
     ...COUNTRY,
     ...(id === "field" ? {} : (built[id] ??= BUILD[id](kit))),
   };
-  countryside.visible = id === "field" || !!m.country;
-  if (m.group) scene.add(m.group);
-  Object.assign(land, COUNTRY.land, m.land);
-  Object.assign(HOME, m.home);
-  Object.assign(EB, m.enemy);
-  setSolids(m.solids);
-  placeHippos(m.hippos);
-  scene.background.setHex(m.sky);
-  scene.fog.color.setHex(m.sky);
-  [scene.fog.near, scene.fog.far] = m.fog;
-  hemi.groundColor.setHex(m.below);
-  hemi.intensity = LIGHT[0] * m.light[0];
-  sun.intensity = LIGHT[1] * m.light[1];
+  countryside.visible = id === "field" || !!here.country;
+  if (here.group) scene.add(here.group);
+  Object.assign(land, COUNTRY.land, here.land);
+  Object.assign(HOME, here.home);
+  Object.assign(EB, here.enemy);
+  setSolids(here.solids);
+  placeHippos(here.hippos);
+  look();
   buildTargets();
-  m.enter?.();
+  here.enter?.();
+  fx?.enter();
+}
+
+// ── Weather ─────────────────────────────────────────────────────────────────
+// The weather asked for (constants.js WEATHERS), and what falls from it on
+// the map in play (weather.js weatherFx): none when sunny, so the
+// Countryside's `land.tick` stays the prototype's null. A map with weather
+// of its own (constants.js FIXED_WEATHER: the Storm, the Sea) keeps it: its
+// look is already that weather's, and T does nothing there.
+let weather = "sunny",
+  fx = null;
+export const weatherFixed = () => Object.hasOwn(FIXED_WEATHER, current);
+export const weatherNow = () => FIXED_WEATHER[current] ?? weather;
+const windy = () => game.mode !== "classic";
+function look() {
+  const w = weatherFixed() ? "sunny" : weather,
+    l = weathered(here, w);
+  scene.background.setHex(l.sky);
+  scene.fog.color.setHex(l.sky);
+  [scene.fog.near, scene.fog.far] = l.fog;
+  hemi.groundColor.setHex(l.below);
+  hemi.intensity = LIGHT[0] * l.light[0];
+  sun.intensity = LIGHT[1] * l.light[1];
+  fx = weatherFx(w, kit, windy);
+  const own = here.land?.tick ?? null;
+  land.tick = fx ? (own ? (dt) => (own(dt), fx.tick(dt)) : fx.tick) : own;
+}
+// Sets the weather; on the map in play at once, sky, rain and all.
+export function setWeather(w) {
+  if (w === weather) return;
+  weather = w;
+  if (weatherFixed()) return;
+  fx?.leave();
+  look();
+  here.relook?.();
+  fx?.enter();
 }
 
 // A new game on the map in play (game.js startGame, once its targets and
 // the player are placed).
 export function startMap() {
   if (current !== "field") built[current]?.start?.();
+  fx?.start?.();
 }
 
 // mulberry32: a small, good, seeded generator.
@@ -175,12 +224,13 @@ function dressing(into) {
 
 // Fire an enemy round from `from` at the player, leading them, if they are
 // within `range` (m) and alive and solid: a map's flak. Returns whether it
-// fired. `spread` is the aim's scatter (rad). Never past a round's reach
+// fired. `spread` is the aim's scatter (rad); `hurt` scales what a hit does
+// (1, an enemy plane's round). Never past a round's reach
 // (weapons.js: 1.4 s at 480 m/s), less a little: a shot that cannot get
 // there is only noise, and a warning of nothing.
 const flakTv = new THREE.Vector3(),
   REACH = 480 * 1.4 - 20;
-export function flakAt(from, range = 600, spread = 0.03) {
+export function flakAt(from, range = 600, spread = 0.03, hurt = 1) {
   if (!P.alive || P.ghost || game.state !== "play") return false;
   const d = from.distanceTo(P.pos);
   if (d > range) return false;
@@ -196,7 +246,7 @@ export function flakAt(from, range = 600, spread = 0.03) {
   dir.y += (Math.random() - 0.5) * spread * 2;
   dir.z += (Math.random() - 0.5) * spread * 2;
   // fire() copies both, so a scratch vector will do.
-  fire(from, dir.normalize(), v, "e");
+  fire(from, dir.normalize(), v, "e", null, hurt, true);
   sfx.egun(camera.position.distanceTo(from));
   return true;
 }
@@ -258,6 +308,7 @@ export const kit = {
   runway,
   hangar,
   flakAt,
+  navOn,
   shape,
   scene,
   camera,
@@ -1272,8 +1323,10 @@ function sea() {
       [1035, 290, -1.8],
       [985, 312, -1.5],
     ],
-    sky: SKY,
-    fog: [900, 4200],
-    below: 0x2f5f80,
+    // Sea fog that never lifts (constants.js FIXED_WEATHER).
+    ...weathered(
+      { sky: SKY, fog: [900, 4200], below: 0x2f5f80, light: [1, 1] },
+      "foggy",
+    ),
   };
 }

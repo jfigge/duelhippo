@@ -41,16 +41,16 @@
         <div class="row">
           <span>KM/H</span><b id="hSpd">0</b><span>ALT</span><b id="hAlt">0</b>
         </div>
-        <div class="bar">
+        <div class="bar dash">
           <span>THR</span><i><u id="bThr"></u></i>
         </div>
-        <div class="bar">
+        <div class="bar dash">
           <span>FUEL</span><i><u id="bFuel"></u></i>
         </div>
         <div class="bar">
           <span>DMG</span><i><u id="bDmg"></u></i>
         </div>
-        <div class="row">
+        <div class="row dash">
           <span>AMMO</span><b id="hAmmo">300</b><span>BOMBS</span
           ><b id="hBombs">6</b>
         </div>
@@ -69,6 +69,9 @@
       </div>
       <canvas id="radar" width="300" height="300"></canvas>
       <canvas id="strip" width="1120" height="120"></canvas>
+      <div id="repair" class="glass hidden">
+        <b></b><small></small><i><u></u></i>
+      </div>
       <div id="msg"></div>
       <div id="warn"></div>
       <div id="svc" class="hidden"></div>
@@ -85,7 +88,10 @@
       <div id="help" class="glass hidden">
         <kbd>W</kbd><kbd>S</kbd> throttle · <kbd>↓</kbd><kbd>↑</kbd> pull up /
         push down<br />
-        <kbd>Space</kbd> guns · <kbd>B</kbd> bomb · <kbd>C</kbd> camera<br />
+        <kbd>Space</kbd> guns · <kbd>B</kbd> bomb · <kbd>C</kbd> camera (Free:
+        chase, hood, cockpit)<br />
+        <kbd>F</kbd> fix the plane in flight, once a flight ·
+        <kbd>T</kbd> weather<br />
         <kbd>&lt;</kbd><kbd>&gt;</kbd> or <kbd>1</kbd>–<kbd>4</kbd> change
         plane, stopped on your runway<br />
         Classic: <kbd>←</kbd><kbd>→</kbd> flip · Free: <kbd>←</kbd
@@ -93,7 +99,7 @@
         Free: <kbd>Shift</kbd> hold or <kbd>Caps Lock</kbd> on: aim down the
         sights<br />
         Free: hold the sights on a plane 3 s to lock, <kbd>R</kbd> missile<br />
-        <kbd>I</kbd> invert · <kbd>M</kbd> sound · <kbd>F</kbd> fullscreen ·
+        <kbd>I</kbd> invert · <kbd>M</kbd> sound · <kbd>G</kbd> fullscreen ·
         <kbd>P</kbd> pause<br />
         <kbd>-</kbd><kbd>=</kbd> game speed (one player only)
       </div>
@@ -263,6 +269,16 @@
           ><span
             >Free: missile, once the sights have held a plane for 3 s
             <i>(not on the Kite)</i></span
+          >
+          <b><kbd>F</kbd></b
+          ><span
+            >Fix a damaged plane in flight, once a flight: press the numbers
+            shown, 1.75 s each <i>(no one can shoot you meanwhile)</i></span
+          >
+          <b><kbd>C</kbd><kbd>T</kbd></b
+          ><span
+            >Camera <i>(Free: chase, hood, cockpit)</i> · weather: sunny, foggy,
+            stormy, snowy</span
           >
           <b><kbd>-</kbd><kbd>=</kbd></b
           ><span>Game speed: slower / faster</span> <b>Landing</b
@@ -447,7 +463,8 @@
           ></div>
           <div class="pick">
             <select id="onLayout" aria-label="Teams"></select
-            ><button id="onFF"><i>Friendly fire</i> off</button>
+            ><button id="onFF"><i>Friendly fire</i> off</button
+            ><button id="onWeather"><i>Weather</i> sunny</button>
           </div>
           <p id="onDesc" class="pickNote"></p>
           <p id="onRules" class="pickNote"></p>

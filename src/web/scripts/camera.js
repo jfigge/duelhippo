@@ -22,8 +22,9 @@
 // Classic: a side camera on +z that follows the plane, near or far (C), so
 // trees, clouds and hangars at different depths give parallax — the reason
 // DESIGN.md rules out an orthographic camera. Free: a lagging chase camera,
-// or the cockpit (C), or down the sights (Shift, Caps Lock). Title screen: a
-// slow orbit of the home airfield.
+// the prototype's view over the hood (C), the pilot's seat with its
+// dashboard (C again; cockpit.js), or down the sights (Shift, Caps Lock).
+// Title screen: a slow orbit of the home airfield.
 
 import { UP, tv, basis } from "./util.js";
 import { HOME, ADS } from "./constants.js";
@@ -31,8 +32,15 @@ import { camera } from "./scene.js";
 import { game } from "./state.js";
 import { floorY, groundY, land } from "./world.js";
 import { P, PB, crashAt, aiming } from "./flight.js";
+import { seat } from "./cockpit.js";
 
 let orbitT = 0;
+
+// C, or the CAM button: the next view. Classic has two (near, far), Free
+// flight three (chase, hood, cockpit).
+export function stepCam() {
+  game.camZoom = (game.camZoom + 1) % (game.mode === "classic" ? 2 : 3);
+}
 const FOV = camera.fov;
 
 // Zoom in or out towards the sights' field of view. Untouched when there is
@@ -88,8 +96,20 @@ export function updCamera(dt) {
     P.obj.visible = false;
     return;
   }
+  if (game.camZoom === 2) {
+    // In the seat: the plane's own wings and propeller in view, and the
+    // dashboard (cockpit.js) drawn over the bottom of the screen.
+    const [x, y, z] = seat(P.kind);
+    camera.position
+      .copy(P.pos)
+      .addScaledVector(b.r, x)
+      .addScaledVector(b.u, y)
+      .addScaledVector(b.f, -z);
+    camera.quaternion.copy(P.q);
+    return;
+  }
   if (game.camZoom === 1) {
-    // cockpit view
+    // cockpit view (the prototype's): over the hood, the plane unseen
     camera.position
       .copy(P.pos)
       .addScaledVector(b.u, 2.25)

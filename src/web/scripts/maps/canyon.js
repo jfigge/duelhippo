@@ -73,6 +73,9 @@ const FLAK = [
 ];
 // A burst of five, 0.12 s apart, 1.5 s between bursts, within 600 m.
 const BURST = { n: 5, gap: 0.12, rest: 1.5, range: 600, spread: 0.03 };
+// A flak round here does this much of what an enemy plane's does: the gorge
+// is narrow and the batteries many, so at full strength they shot too well.
+const HURT = 0.4;
 // The river runs this far off the centreline, on the side away from the
 // airfields' hangars, so the town on the centreline stands on dry ground.
 const RIVER = 52;
@@ -650,7 +653,7 @@ export default function build(kit) {
       const f = t.flak;
       if ((f.cd -= dt) > 0) continue;
       muzzle.set(t.x, t.y + 5, t.z);
-      if (kit.flakAt(muzzle, BURST.range, BURST.spread)) {
+      if (kit.flakAt(muzzle, BURST.range, BURST.spread, HURT)) {
         f.cd = ++f.n >= BURST.n ? ((f.n = 0), BURST.rest) : BURST.gap;
         kit.puff(muzzle, 0x555555, 1, 2, 1, 0.6, 3);
       } else {

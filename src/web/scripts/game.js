@@ -37,6 +37,9 @@ import {
   MAP_KEY,
   UNLOCK,
   COURSE,
+  WEATHERS,
+  WEATHER_NAMES,
+  WEATHER_KEY,
 } from "./constants.js";
 import { scene, camera } from "./scene.js";
 import { S, game, opt, mapOpen, unlockAll } from "./state.js";
@@ -74,14 +77,22 @@ import {
   clearMissiles,
 } from "./missiles.js";
 import { isTouch, releaseKeys, bindInput } from "./input.js";
-import { updCamera } from "./camera.js";
+import { updCamera, stepCam } from "./camera.js";
+import { updCockpit, cockpitOn, dash } from "./cockpit.js";
+import {
+  startRepair,
+  repairKey,
+  repairing,
+  updRepair,
+  resetRepair,
+} from "./repair.js";
 import { hud, initHud, showPlane } from "./hud.js";
 import { remotes, clearRemotes, teamScores } from "./remote.js";
 import { net, myTeam, isMode } from "./net/bus.js";
 import { beginMatch, matchFrame, outOfPlanes } from "./net/match.js";
 import { TEAM, MODES } from "./net/teams.js";
 import { PLANES } from "./constants.js";
-import { useMap, startMap } from "./maps.js";
+import { useMap, startMap, mapNow, setWeather, weatherFixed } from "./maps.js";
 import {
   run,
   startCourse,
@@ -186,7 +197,9 @@ export function startGame(m) {
   if (course) m = "free";
   game.mode = m;
   // The map: a match's, else the player's; Classic (and the course) is
-  // always the Countryside, the prototype's.
+  // always the Countryside, the prototype's. The weather likewise: the
+  // organiser's in a match.
+  setWeather(net.on ? net.weather : opt.weather);
   useMap(net.on ? net.map : m === "classic" || course ? "field" : opt.map);
   sfx.init();
   sfx.resume();
@@ -232,6 +245,7 @@ export function startGame(m) {
           : [],
   );
   resetPlayer();
+  resetRepair();
   // The map's own per-game reset (its convoy, weather, wind); the
   // Countryside has none.
   startMap();
@@ -599,6 +613,7 @@ function toTitle() {
   matchResult = false;
   net.mode = null;
   net.map = "field";
+  net.weather = "sunny";
   net.seat = null;
   net.teams = 0;
   net.roster.clear();
@@ -608,6 +623,8 @@ function toTitle() {
   clearRemotes();
   clearFields();
   endCourse();
+  resetRepair();
+  setWeather(opt.weather);
   useMap(opt.map);
   P.ghost = false;
   wear(-1);
@@ -753,6 +770,28 @@ function toggleInvert() {
   say(opt.invert ? "Pitch inverted" : "Pitch normal", 1.2);
 }
 
+// ── Weather ─────────────────────────────────────────────────────────────────
+// T, in play: the next weather (constants.js WEATHERS), remembered. Not in a
+// match, whose weather the organiser picked, nor on a map with weather of
+// its own.
+function cycleWeather() {
+  if (net.on) return say("The organiser chose the weather", 1.5);
+  if (weatherFixed())
+    return say(
+      mapNow() === "sea" ? "Sea fog never lifts" : "The storm won't lift here",
+      1.5,
+    );
+  const i = WEATHERS.indexOf(opt.weather);
+  opt.weather = WEATHERS[(i + 1) % WEATHERS.length];
+  try {
+    window.localStorage.setItem(WEATHER_KEY, opt.weather);
+  } catch {
+    // No storage: the weather lasts the session.
+  }
+  setWeather(opt.weather);
+  say("Weather: " + WEATHER_NAMES[opt.weather], 1.2);
+}
+
 // Going full screen hides the page for a moment: on macOS the window moves
 // to its own Space, and Electron reports the page hidden for about half a
 // second. The visibility handler below would read that as the player leaving
@@ -852,6 +891,7 @@ function initUI() {
     rosterChanged,
     speed: () => opt.speed,
     map: () => opt.map,
+    weather: () => opt.weather,
   });
   mapButtons($("maps"), "map");
   // Its own line, which no short-window rule hides.
@@ -863,6 +903,7 @@ function initUI() {
   }
   for (const b of document.querySelectorAll("[data-map]"))
     b.addEventListener("click", () => setMap(b.dataset.map));
+  setWeather(opt.weather);
   setMap(opt.map, false);
   initScoreboard();
   $("bMute").addEventListener("click", () => {
@@ -941,6 +982,11 @@ export function boot({ createRenderer }) {
     pickPlane: choosePlane,
     stepPlane,
     fireMissile,
+    stepCam,
+    cycleWeather,
+    fix: startRepair,
+    repairing,
+    repairKey,
   });
   initUI();
   initHud();
@@ -958,10 +1004,21 @@ export function boot({ createRenderer }) {
     last = now;
     const live = game.state === "play" && !game.paused;
     if (live) update(gdt);
+    // A repair's second is a real one, at any game speed.
+    if (live) updRepair(dt);
     if (net.on) matchFrame(now, gdt, live);
     sfx.engine(P.thr, P.speed, live && P.alive);
     if (!game.paused) updCamera(game.state === "play" ? gdt : dt);
+    updCockpit(dt);
     renderer.render(scene, camera);
+    // The cockpit's dashboard, over the world with the depth cleared, so it
+    // is never cut by the scenery or the world camera's near plane.
+    if (cockpitOn()) {
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      renderer.render(dash.scene, dash.camera);
+      renderer.autoClear = true;
+    }
     hud(dt);
   }
   window.requestAnimationFrame(frame);

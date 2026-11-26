@@ -51,7 +51,8 @@ const PREVENT = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"];
 
 // The game actions presses trigger; set by bindInput():
 // { enter, togglePause, toggleFull, dropBomb, flip, stepSpeed, toggleInvert,
-//   pickPlane, stepPlane, fireMissile }
+//   pickPlane, stepPlane, fireMissile, stepCam, cycleWeather, fix,
+//   repairing, repairKey }
 let act = null;
 
 export function releaseKeys() {
@@ -63,7 +64,8 @@ function press(code) {
     setLabel($("bMute"), "Sound", sfx.toggle() ? "off" : "on");
     return;
   }
-  if (code === "KeyF") {
+  // G, not the prototype's F, which fixes the plane in flight (repair.js).
+  if (code === "KeyG") {
     act.toggleFull();
     return;
   }
@@ -87,13 +89,20 @@ function press(code) {
     return;
   }
   if (game.paused) return;
+  // A repair under way takes the number keys (repair.js).
+  if (act.repairing() && /^(Digit|Numpad)[0-9]$/.test(code)) {
+    act.repairKey(+code.at(-1));
+    return;
+  }
+  if (code === "KeyF") act.fix();
+  if (code === "KeyT") act.cycleWeather();
   if (code === "KeyB") act.dropBomb();
   if (code === "KeyR") act.fireMissile();
   if (/^Digit[1-4]$/.test(code)) act.pickPlane(+code.slice(5) - 1);
   // < and > share their keys with , and . so Shift is optional.
   if (code === "Comma") act.stepPlane(-1);
   if (code === "Period") act.stepPlane(1);
-  if (code === "KeyC") game.camZoom = (game.camZoom + 1) % 2;
+  if (code === "KeyC") act.stepCam();
   if (code === "KeyI") act.toggleInvert();
   if (code === "KeyH") $("help").classList.toggle("hidden");
   if (
@@ -267,9 +276,7 @@ export function bindInput(actions) {
     $("bAim").classList.toggle("on", touch.aim);
   });
   $("bFlip").addEventListener("pointerdown", () => act.flip());
-  $("bCam").addEventListener("click", () => {
-    game.camZoom = (game.camZoom + 1) % 2;
-  });
+  $("bCam").addEventListener("click", () => act.stepCam());
   $("bPause").addEventListener("click", () => act.togglePause());
 
   // A sideways swipe across the scene changes plane, as < and > do: left

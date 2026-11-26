@@ -155,6 +155,53 @@ test("the Night raid: every team's runway lights glow, in its own colour", () =>
   clearFields();
 });
 
+test("the Night raid's flak, unlike the Canyon's, hits as hard as a plane's", () => {
+  pick("night");
+  game.start("free");
+  cruise(1400, 300, 0);
+  game.poke((P) => P.vel.set(0, 0, 0));
+  const from = P.pos.clone().set(1400, 300, 120);
+  assert.equal(flakAt(from, 600, 0), true);
+  for (let i = 0; i < 30 && !P.dmg; i++) {
+    game.poke((P) => P.pos.set(1400, 300, 0));
+    game.run(FRAME_MS);
+  }
+  assert.equal(P.dmg, P.pt.armour);
+});
+
+test("the Night raid lights every plane, port red and starboard green", async () => {
+  const { NAV, makePlane } = await import("../world.js");
+  const { enemies } = await import("../ai.js");
+  const { addRemote, dropRemote } = await import("../remote.js");
+  const lit = () => NAV.port.lamp.visible && NAV.star.glow.visible;
+  pick("field");
+  game.start("free");
+  assert.ok(!lit(), "not on the Countryside");
+  pick("night");
+  game.start("free");
+  assert.ok(lit());
+  const navs = (o) => {
+    const n = [];
+    o.traverse((c) => c.userData.nav && c.isMesh && n.push(c));
+    return n;
+  };
+  for (const plane of [P.obj, enemies[0].obj, makePlane(1, 2, 3, 4, 3)]) {
+    const [port, star] = navs(plane);
+    assert.ok(port.position.x < 0 && port.material === NAV.port.lamp);
+    assert.ok(star.position.x > 0 && star.material === NAV.star.lamp);
+  }
+  // A player's plane put away keeps the shared lights for everyone else.
+  let freed = false;
+  NAV.port.lamp.addEventListener("dispose", () => (freed = true));
+  const r = addRemote(5, 1);
+  assert.equal(navs(r.obj).length, 2);
+  dropRemote(5);
+  assert.ok(!freed, "the shared lamp is not disposed");
+  pick("field");
+  game.start("free");
+  assert.ok(!lit(), "off again");
+});
+
 test("flak fires only at a plane its rounds can reach", () => {
   game.start("free");
   // A round flies 1.4 s at 480 m/s (weapons.js): 672 m.

@@ -166,8 +166,8 @@ function spyFlak() {
   const shots = [],
     real = kit.flakAt;
   let frame = 0;
-  kit.flakAt = (from, range, spread) => {
-    const ok = real(from, range, spread);
+  kit.flakAt = (from, ...rest) => {
+    const ok = real(from, ...rest);
     if (ok) shots.push({ x: from.x, z: from.z, frame });
     return ok;
   };
@@ -218,6 +218,30 @@ test("flak on the rim: five-round bursts at a plane in the open", () => {
     else assert.ok(Math.abs(g - 1.5) < 0.02, `rest ${g}`);
   });
   assert.ok(P.dmg > 0, "and it hits");
+});
+
+test("a flak hit here does 40% of what an enemy plane's round does", () => {
+  game.start("free");
+  calm();
+  const f = targets.find((t) => t.kind === "flak");
+  alone(f);
+  const each = 0.4 * P.pt.armour,
+    spy = spyFlak(),
+    steps = [];
+  game.poke((P) => (P.dmg = 0));
+  let was = 0;
+  spy.run(6000, (P) => {
+    hold(f.x - 300, f.y + 200, f.z)(P);
+    if (P.dmg > was) steps.push(P.dmg - was);
+    if (P.dmg > 60) P.dmg = 0; // never downed
+    was = P.dmg;
+  });
+  spy.done();
+  assert.ok(steps.length > 0, "it hits");
+  for (const d of steps) {
+    const n = d / each;
+    assert.ok(Math.abs(n - Math.round(n)) < 1e-9 && n >= 1, `a hit of ${d}`);
+  }
 });
 
 test("flak: the rim shields a plane close under it", () => {

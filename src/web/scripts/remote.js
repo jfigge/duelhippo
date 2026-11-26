@@ -93,11 +93,13 @@ export function dropRemote(seat) {
 }
 
 // makePlane and blob build every plane's geometries and materials afresh,
-// so a plane put away gives its GPU memory back.
+// so a plane put away gives its GPU memory back; all but the navigation
+// lights', which every plane shares (world.js NAV).
 function dispose(obj) {
+  const shared = (x) => x?.userData.shared;
   obj.traverse((o) => {
-    o.geometry?.dispose();
-    for (const m of [].concat(o.material ?? [])) m.dispose();
+    if (!shared(o.geometry)) o.geometry?.dispose();
+    for (const m of [].concat(o.material ?? [])) if (!shared(m)) m.dispose();
   });
 }
 

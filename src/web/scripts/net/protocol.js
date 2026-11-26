@@ -29,7 +29,7 @@
 //
 // Lobby (the organiser is whoever has been in the room longest)
 //   hi     {v, h, n}                   to each player met: version, hash, name
-//   setup  {v, layout, mode, map, ff, speed, roster: [[seat, team]]}
+//   setup  {v, layout, mode, map, weather, ff, speed, roster: [[seat, team]]}
 //                                      organiser: the match on offer
 //   team   {team}                      to the organiser: put me on that team
 //   board  {g, mode, list}             each: its copy of one mode of the
@@ -77,7 +77,7 @@ import { PLANES } from "../constants.js";
 // Bump it whenever a message changes shape, and whenever the maps or planes
 // change (constants.js MAPS, PLANES): builds with different maps would fly
 // different worlds. tests/net-protocol.test.js holds each version's.
-export const PROTO = 6;
+export const PROTO = 7;
 
 // Messages worth nothing late: shown (or, for a flyer, counted) as they
 // arrive, so net/link.js does not resend them after a data channel dies.

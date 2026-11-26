@@ -38,7 +38,7 @@ const BEAM = { length: 1100, half: 0.09, hold: 3, rate: 0.15 };
 const EDGES = [0x55ffff, 0xff55ff];
 
 export default function build(kit) {
-  const { THREE, put, box, M, P, say, flakAt } = kit;
+  const { THREE, put, box, M, P, say, flakAt, navOn } = kit;
   const group = new THREE.Group();
 
   // Moon and stars, on a dome the fog does not reach.
@@ -247,6 +247,9 @@ export default function build(kit) {
     below: 0x101820,
     light: [0.22, 0.16],
     enter() {
+      // Every plane's port and starboard lights (world.js NAV), so the others
+      // can be found in the dark.
+      navOn(true);
       glow(countryside, EDGES);
       windows();
       glowFields();
@@ -262,6 +265,7 @@ export default function build(kit) {
       }
     },
     leave() {
+      navOn(false);
       for (const m of glowing) m.emissive.setHex(0);
       glowing.clear();
       lit.clear();

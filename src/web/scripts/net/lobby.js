@@ -36,7 +36,7 @@ import { net } from "./bus.js";
 import { serverUrl, serverHint } from "./config.js";
 import { Mesh } from "./link.js";
 import { PROTO } from "./protocol.js";
-import { MAPS } from "../constants.js";
+import { MAPS, WEATHERS, FIXED_WEATHER } from "../constants.js";
 import { mapOpen } from "../state.js";
 import { matchMessage, peerLeft, abandonMatch, settleNow } from "./match.js";
 import {
@@ -107,6 +107,7 @@ function blank() {
     layout: "2x1",
     mode: "dogfight",
     map: "field",
+    weather: "sunny",
     ff: false,
     speed: 1,
     roster: [],
@@ -172,6 +173,13 @@ export function initLobby(actions) {
       if (mapOpen(b.dataset.lmap)) organise({ map: b.dataset.lmap });
     });
   $("onFF").addEventListener("click", () => organise({ ff: !setup.ff }));
+  // Every machine flies the organiser's weather: one player cannot clear
+  // the fog the rest fly in.
+  $("onWeather").addEventListener("click", () => {
+    if (Object.hasOwn(FIXED_WEATHER, setup.map)) return;
+    const i = WEATHERS.indexOf(setup.weather);
+    organise({ weather: WEATHERS[(i + 1) % WEATHERS.length] });
+  });
   $("onStart").addEventListener("click", go);
   $("onBack").addEventListener("click", leave);
 }
@@ -238,6 +246,7 @@ function connected(m) {
   setup.speed = act.speed();
   // The organiser's first offer is the map they fly alone.
   setup.map = act.map();
+  setup.weather = act.weather();
   setup.roster = [{ seat: m.seat, team: 0 }];
   shownGroup = null;
   rosterKey = "";
@@ -462,6 +471,7 @@ function cleanSetup(m) {
     layout: lay.id,
     mode: MODES[m.mode] ? m.mode : "dogfight",
     map: m.map,
+    weather: WEATHERS.includes(m.weather) ? m.weather : "sunny",
     ff: m.ff === true,
     speed: [0.25, 0.5, 0.75, 1].includes(m.speed) ? m.speed : 1,
     roster,
@@ -499,6 +509,7 @@ function publish() {
     layout: setup.layout,
     mode: setup.mode,
     map: setup.map,
+    weather: setup.weather,
     ff: setup.ff,
     speed: setup.speed,
     roster: setup.roster.map((p) => [p.seat, p.team]),
@@ -559,6 +570,9 @@ function refresh() {
     }
   }
   setLabel($("onFF"), "Friendly fire", setup.ff ? "on" : "off");
+  const fixed = Object.hasOwn(FIXED_WEATHER, setup.map);
+  setLabel($("onWeather"), "Weather", weatherOf());
+  $("onWeather").disabled = !boss || fixed;
   $("onFF").classList.toggle("on", setup.ff);
   $("onFF").disabled = !boss;
   $("onDesc").textContent =
@@ -637,10 +651,14 @@ function noteRoster() {
   if (!quiet) act.rosterChanged?.();
 }
 
+// The weather a match will fly in: the map's own, if it has one.
+const weatherOf = () => FIXED_WEATHER[setup.map] ?? setup.weather;
+
 const describe = () =>
   MODES[setup.mode] +
   " · " +
   MAPS[setup.map] +
+  (weatherOf() === "sunny" ? "" : ", " + weatherOf()) +
   " · Full 3D" +
   (setup.ff ? " · Friendly fire" : "") +
   (setup.speed < 1 ? ` · ${Math.round(setup.speed * 100)}% speed` : "");
@@ -731,6 +749,7 @@ function begin() {
   const lay = layout(setup.layout);
   net.mode = setup.mode;
   net.map = setup.map;
+  net.weather = setup.weather;
   net.ff = setup.ff;
   net.teams = lay.teams;
   net.roster.clear();

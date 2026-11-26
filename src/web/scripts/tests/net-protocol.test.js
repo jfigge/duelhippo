@@ -35,6 +35,11 @@ const VERSIONS = {
     maps: "field sky arctic canyon zeppelin sea night volcano storm city",
     planes: "kite hornet lancer brute",
   },
+  // The maps reordered (the hardest last), and setup carries the weather.
+  7: {
+    maps: "field sky arctic zeppelin volcano city sea storm night canyon",
+    planes: "kite hornet lancer brute",
+  },
 };
 
 test("new maps or planes mean a new protocol version", () => {

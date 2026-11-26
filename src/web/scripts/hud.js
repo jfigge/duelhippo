@@ -169,16 +169,16 @@ export function hud(dt) {
   $("warn").textContent = w;
   $("warn").classList.toggle("on", !!w);
   if (game.mode === "classic") drawStrip();
-  else drawRadar();
+  else if (rc) drawRadarOn(rc, $("radar").width);
 }
 
-function drawRadar() {
-  const c = $("radar"),
-    W = c.width,
-    R = W / 2,
+// The radar, heading up, on a `W` px square of canvas `rc`: the HUD's top
+// right, or the cockpit's panel (cockpit.js), which passes its own face.
+export function drawRadarOn(rc, W, face = "rgba(6,8,18,.66)") {
+  const R = W / 2,
     range = 2400;
   rc.clearRect(0, 0, W, W);
-  rc.fillStyle = "rgba(6,8,18,.66)";
+  rc.fillStyle = face;
   rc.beginPath();
   rc.arc(R, R, R - 2, 0, 7);
   rc.fill();

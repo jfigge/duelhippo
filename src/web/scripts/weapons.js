@@ -42,6 +42,7 @@ import {
   land,
 } from "./world.js";
 import { P, PB } from "./flight.js";
+import { repairing } from "./repair.js";
 import { enemies, killEnemy, ownsEnemy } from "./ai.js";
 import { solidRemotes } from "./remote.js";
 import { net, send, teamOf, myTeam, canHurt } from "./net/bus.js";
@@ -63,7 +64,9 @@ const aim = new V();
 // `own` is 'p' for the player's rounds, 'e' for an enemy's, and in a match
 // 'r' for another player's, whose seat is `seat` (net/match.js fires those
 // as they report them).
-export function fire(pos, dir, spd, own, seat = null) {
+// `hurt` scales what an enemy round does to the player (a map's flak's may
+// be gentler); `flak` marks one from the ground, not a plane.
+export function fire(pos, dir, spd, own, seat = null, hurt = 1, flak = false) {
   if (net.on && own === "p")
     send({ t: "f", o: v3(pos), d: unit3(dir), s: spd });
   let b = bullets.find((b) => !b.on);
@@ -76,6 +79,8 @@ export function fire(pos, dir, spd, own, seat = null) {
   b.on = true;
   b.own = own;
   b.seat = seat;
+  b.hurt = hurt;
+  b.flak = flak;
   // A teammate's rounds are the player's yellow; everyone else's magenta.
   b.m.material =
     own === "p" || (own === "r" && teamOf(seat) === myTeam()) ? bMatP : bMatE;
@@ -106,6 +111,7 @@ export function updBullets(dt) {
         P.alive &&
         !P.ghost &&
         canHurt(b.seat) &&
+        !repairing() &&
         segD2(b.p0, p, P.pos) < 22
       ) {
         hit = true;
@@ -169,10 +175,16 @@ export function updBullets(dt) {
             scareHippo(h);
             break;
           }
-    } else if (P.alive && !P.ghost && segD2(b.p0, p, P.pos) < 22) {
+    } else if (
+      P.alive &&
+      !P.ghost &&
+      (b.flak || !repairing()) &&
+      segD2(b.p0, p, P.pos) < 22
+    ) {
       hit = true;
       P.hitBy = "e";
-      P.dmg = Math.min(100, P.dmg + P.pt.armour);
+      // `hurt` is 1 but for a map's gentler flak (maps.js flakAt).
+      P.dmg = Math.min(100, P.dmg + P.pt.armour * b.hurt);
       sfx.hit();
       puff(P.pos, 0xff55ff, 3, 6, 0.6, 0.3);
       if (P.dmg >= 100) say("Engine hit! Going down…", 2.5);

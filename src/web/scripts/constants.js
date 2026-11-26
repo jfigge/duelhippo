@@ -62,19 +62,52 @@ export const MAPS = {
   field: "Countryside",
   sky: "Sky islands",
   arctic: "Arctic",
-  canyon: "Canyon",
   zeppelin: "Zeppelins",
-  sea: "Sea",
-  night: "Night raid",
   volcano: "Volcano",
-  storm: "Storm",
   city: "City",
+  sea: "Sea",
+  storm: "Storm",
+  night: "Night raid",
+  canyon: "Canyon",
 };
 export const MAP_KEY = "duelhippo.map";
 
+// ── Weather ─────────────────────────────────────────────────────────────────
+// Not part of the prototype. T steps through these on any map but two: the
+// Storm is always stormy and the Sea always foggy (`weather` on the map, in
+// maps.js). Sunny is each map as it is; in a team game the organiser picks.
+// weather.js says what each does to a map's sky.
+export const WEATHERS = ["sunny", "foggy", "stormy", "snowy"];
+export const WEATHER_NAMES = {
+  sunny: "Sunny",
+  foggy: "Foggy",
+  stormy: "Stormy",
+  snowy: "Snowy",
+};
+export const WEATHER_KEY = "duelhippo.weather";
+// The maps whose weather never changes, and what it is.
+export const FIXED_WEATHER = { storm: "stormy", sea: "foggy" };
+
+// ── Repair in flight ────────────────────────────────────────────────────────
+// Not part of the prototype. F, once a flight, on a plane hurt but still
+// flying: a countdown from `count`, `tick` s a number, then a run of number
+// keys to press, `per` s each. The run is `min` keys on a scratched plane,
+// one more for every `step` % of damage (to the nearest), `max` at most.
+// Got right, the damage is gone (not the fuel or the rounds). While it runs
+// no other plane's fire can touch the plane (repair.js).
+export const REPAIR = {
+  count: 3,
+  tick: 0.5,
+  per: 1.75,
+  min: 4,
+  step: 25,
+  max: 8,
+};
+
 // Maps are earned: each opens once the best one-player score (any mode) is
 // more than its number, 1,000 more than the one before. The Countryside is
-// always open. The order is a random draw, to be ranked after playing.
+// always open. The hardest flying comes last: the Sea's fog, the Storm, the
+// Night raid's searchlights and the Canyon's flak.
 export const UNLOCK = Object.fromEntries(
   Object.keys(MAPS).map((id, i) => [id, i * 1000]),
 );

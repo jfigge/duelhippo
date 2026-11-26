@@ -105,7 +105,7 @@ test("a big score opens every map it beats, all at once", () => {
 test("a team game's organiser offers only the maps they have earned", async () => {
   const { fakeServer, tick, hash } = await import("./fake-server.js");
   const { PROTO } = await import("../net/protocol.js");
-  S.best = 5500; // the Sea, not the City
+  S.best = 5500; // the City, not the Sea
   const net = fakeServer(w, { seat: 0 });
   $("bOnline").click();
   $("onHost").disabled = false;
@@ -114,9 +114,9 @@ test("a team game's organiser offers only the maps they have earned", async () =
   net.server({ t: "peer", seat: 1 });
   net.from(1, { t: "hi", v: PROTO, h: hash("b"), n: "Bo" });
   const lmap = (id) => w.document.querySelector(`[data-lmap="${id}"]`);
-  assert.ok(!lmap("sea").disabled);
-  assert.ok(lmap("city").disabled);
-  assert.match(lmap("city").textContent, /Score over 9,000/);
-  lmap("sea").click();
-  assert.equal(net.sent("setup").at(-1).map, "sea");
+  assert.ok(!lmap("city").disabled);
+  assert.ok(lmap("sea").disabled);
+  assert.match(lmap("sea").textContent, /Score over 6,000/);
+  lmap("city").click();
+  assert.equal(net.sent("setup").at(-1).map, "city");
 });
