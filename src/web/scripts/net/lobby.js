@@ -182,7 +182,10 @@ export function openLobby() {
   $("online").classList.remove("hidden");
   show("onMenu");
   $("onLink").textContent = "";
-  status(serverUrl() ? "" : "Team games aren't available in this build.", true);
+  status(
+    serverUrl() ? "" : "Multi-player games aren't available in this build.",
+    true,
+  );
   $("onHost").disabled = $("onJoin").disabled = !serverUrl();
 }
 

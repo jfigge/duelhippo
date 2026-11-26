@@ -24,8 +24,8 @@
 // game.js, and it draws no random numbers.
 //
 // It follows the other hippos:
-//   - The automatic check is off until the player turns it on (the title's
-//     Updates button). When on, it runs once, ten seconds after launch.
+//   - The automatic check is off until the player turns it on (Settings ▸
+//     Updates). When on, it runs once, ten seconds after launch.
 //   - A check the player asked for (Help ▸ Check for Updates…) always
 //     answers. An automatic one speaks only when it finds something.
 //   - A downloaded update installs when the game is quit, or on Restart. The
@@ -60,6 +60,7 @@ export function bindUpdates({
     toggle.replaceChildren(i, auto() ? " auto" : " manual");
   };
   toggle.classList.remove("hidden");
+  doc.querySelector(".updRow")?.classList.remove("hidden");
   label();
   toggle.addEventListener("click", () => {
     w.localStorage.setItem(UPDATES_KEY, auto() ? "0" : "1");

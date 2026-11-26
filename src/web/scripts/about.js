@@ -21,7 +21,7 @@
 // Chip Hippo's: the logo, the name with an (i) that shows the version, what
 // the game is, the credit, the support address and the sponsor link.
 //
-// It opens from the title's About button in every shell, and from the
+// It opens from Settings ▸ About Duel Hippo in every shell, and from the
 // desktop menu (About Duel Hippo, through the preload's `onAbout`) at any
 // time. It opens over whatever is showing, so `beforeOpen` lets game.js
 // pause a game first. While it is up it takes the keyboard: Escape closes it

@@ -864,7 +864,9 @@ h2 {
 }
 /* A map still to earn: dimmed, with the score that opens it underneath. */
 .pick button.locked {
-  opacity: 0.6;
+  opacity: 0.45;
+  filter: grayscale(1);
+  color: var(--dim);
   cursor: not-allowed;
 }
 .pick button.locked i {
@@ -1009,6 +1011,150 @@ body.touch .tk {
 .rot {
   display: none;
 }
+
+/* ── The title card ──────────────────────────────────────────────────────
+   Calm by rank: the name, then the two main ways to play as big cards, the
+   two others as slim rows, then one map picker and a three-button foot.
+   The switches live on the Settings screen. Scoped to #titleBody, so the
+   game-over card's modes and the lobby's maps keep their own look. */
+#titleBody {
+  max-width: 560px;
+}
+#titleBody .head {
+  gap: 16px;
+}
+#titleBody #mascot {
+  width: clamp(56px, 9vw, 76px);
+}
+#titleBody h1 {
+  font-size: clamp(30px, 6vw, 44px);
+  white-space: nowrap;
+}
+#titleBody .head .tag {
+  margin: 6px 0 0;
+  font: 600 13px/1.2 var(--sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+#titleBody .modes {
+  margin: 20px 0 10px;
+  gap: 10px;
+}
+#titleBody .mode {
+  padding: 16px 18px;
+}
+#titleBody .mode b {
+  font-size: 20px;
+}
+/* The two small ways to play: slimmer, the accent on the name only, the
+   blurb under it. */
+#titleBody .mode.course,
+#titleBody .mode.online {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 11px 16px;
+  border-width: 1px;
+  border-color: color-mix(in srgb, var(--c) 55%, transparent);
+  box-shadow: none;
+  background: rgba(16, 20, 40, 0.6);
+}
+#titleBody .mode.course b,
+#titleBody .mode.online b {
+  flex: none;
+  margin: 0;
+  font-size: 15px;
+}
+#titleBody .mode b i {
+  font-style: normal;
+  margin-right: 2px;
+}
+#titleBody .mode.course span,
+#titleBody .mode.online span {
+  margin: 0;
+  font-size: 13px;
+}
+/* The map: ‹ name ›, and under it how many are open and what opens the
+   next. The name opens every map's button below. */
+.mapPick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 8px;
+  margin: 16px 0 4px;
+}
+.mapLabel {
+  margin-right: 6px;
+  font: 700 12px/1 var(--sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.mapStep,
+#mapName {
+  min-height: 40px;
+  background: var(--card);
+  border: 1.5px solid #3a4060;
+  border-radius: 12px;
+}
+.mapStep {
+  width: 40px;
+  font: 700 22px/1 var(--sans);
+  color: var(--cy);
+}
+#mapName {
+  min-width: 170px;
+  padding: 0 16px;
+  font: 700 16px/1 var(--sans);
+  color: var(--yl);
+}
+.mapStep:hover,
+#mapName:hover,
+#mapName[aria-expanded="true"] {
+  border-color: var(--cy);
+}
+/* A map still to earn: greyed, since it can't be flown. */
+#mapName.locked {
+  color: var(--dim);
+  border-style: dashed;
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.mapNote {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 13px;
+  color: var(--dim);
+}
+#titleBody .pick.maps {
+  margin-top: 10px;
+}
+#titleBody .foot .gear {
+  min-width: 44px;
+  padding: 0;
+  font-size: 20px;
+}
+/* Settings: a label, and its switch beside it. */
+.setBox {
+  max-width: 460px;
+}
+.setRows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 20px;
+  margin: 8px 0 4px;
+  font-size: 16px;
+}
+.setRows i {
+  font-style: normal;
+  color: var(--dim);
+}
+.setRows .ghost {
+  min-width: 150px;
+}
 @media (max-width: 600px) {
   .modes {
     grid-template-columns: minmax(0, 1fr);
@@ -1028,10 +1174,6 @@ body.touch .tk {
    spacing tightened, so the footer (best score, Controls, Scores, settings)
    is on screen at launch; long tables scroll inside their card. */
 @media (max-height: 820px) {
-  #titleBody .intro,
-  #titleBody .pickNote:not(.testing) {
-    display: none;
-  }
   .modes {
     margin: 12px 0 6px;
   }
@@ -1078,12 +1220,6 @@ body.touch .tk {
   h1 {
     font-size: 30px;
   }
-  h1 br {
-    display: none;
-  }
-  h1 em {
-    margin-left: 0.3em;
-  }
   h2 {
     margin-bottom: 6px;
   }
@@ -1091,18 +1227,54 @@ body.touch .tk {
     margin: 8px 0;
     gap: 10px;
   }
+  /* The four ways to play in one row, the two main ones wider; one line
+     of blurb each, and none on the two small ones. */
   #titleBody .modes {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  #titleBody .mode.online {
-    grid-column: auto;
+    grid-template-columns: 1.4fr 1.4fr 1fr 1fr;
   }
   #titleBody .mode span {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #titleBody .mode.course span,
+  #titleBody .mode.online span {
+    display: none;
+  }
+  #titleBody {
+    max-width: 760px;
+  }
+  #titleBody #mascot {
+    width: 48px;
+  }
+  #titleBody h1 {
+    font-size: 30px;
+  }
+  #titleBody .mode {
+    padding: 10px 12px;
+  }
+  #titleBody .mode b {
+    font-size: 17px;
+  }
+  /* The two small ones stand as narrow tiles here: the name, wrapped. */
+  #titleBody .mode.course,
+  #titleBody .mode.online {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 8px 10px;
+  }
+  #titleBody .mode.course b,
+  #titleBody .mode.online b {
+    flex: initial;
+    font-size: 14px;
+  }
+  #titleBody .head .tag {
+    display: none;
+  }
+  #titleBody .mapPick {
+    margin-top: 2px;
   }
   /* The over card's ways on, in a row of four. */
   #overModes {
@@ -1549,4 +1721,8 @@ body:has(#title.hidden) #upd.ready {
   body.touch #planeTag small {
     display: none;
   }
+}
+/* The row's label names the switch, so the button need not. */
+.setRows .ghost i {
+  display: none;
 }

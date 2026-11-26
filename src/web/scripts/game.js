@@ -35,6 +35,7 @@ import {
   SPEED_KEY,
   MAPS,
   MAP_KEY,
+  UNLOCK,
   COURSE,
 } from "./constants.js";
 import { scene, camera } from "./scene.js";
@@ -174,6 +175,11 @@ function stepPlane(d, quiet = false) {
 let lastStart = "classic";
 
 export function startGame(m) {
+  // Back on the title, the picker shows the map flown, not a locked one.
+  if (viewMap) {
+    viewMap = null;
+    showMaps();
+  }
   if (!net.on) lastStart = m;
   // The obstacle course is Free flight over the Countryside, with rings.
   const course = m === "course";
@@ -238,7 +244,7 @@ export function startGame(m) {
   camera.position.set(P.pos.x, land.height ? P.pos.y + 18 : 20, P.pos.z + 90);
   game.state = "play";
   setPause(false);
-  for (const id of ["title", "over", "controls", "course"])
+  for (const id of ["title", "over", "controls", "course", "settings"])
     $(id).classList.add("hidden");
   $("hud").classList.remove("off");
   $("touchui").classList.toggle("hidden", !isTouch);
@@ -268,7 +274,10 @@ function enterKey() {
   if (net.on) return;
   const shown = (id) => !$(id).classList.contains("hidden");
   if (!shown("title") && !shown("over")) return;
-  if (["course", "controls", "scores", "online", "pause"].some(shown)) return;
+  if (
+    ["course", "controls", "scores", "online", "pause", "settings"].some(shown)
+  )
+    return;
   startGame(lastStart);
 }
 
@@ -640,6 +649,7 @@ function toTitle() {
 function setMap(id, persist = true) {
   if (!MAPS[id] || !mapOpen(id)) return;
   opt.map = id;
+  viewMap = null;
   if (persist)
     try {
       window.localStorage.setItem(MAP_KEY, id);
@@ -651,11 +661,40 @@ function setMap(id, persist = true) {
 }
 
 // The title's map buttons: the one picked, and those still to earn, with
-// the score that opens them.
+// the score that opens them. Above them, the ‹ name › picker and its note:
+// how many are open, and the score that opens the next; or, on a locked
+// map, greyed, the score that opens it.
 export function showMaps() {
   for (const b of document.querySelectorAll("[data-map]")) {
     mapButton(b, b.dataset.map, opt.map);
   }
+  const ids = Object.keys(MAPS),
+    open = ids.filter(mapOpen).length,
+    next = ids.find((id) => !mapOpen(id)),
+    shown = viewMap ?? opt.map,
+    locked = !mapOpen(shown),
+    name = $("mapName");
+  name.textContent = MAPS[shown];
+  name.classList.toggle("locked", locked);
+  name.setAttribute("aria-disabled", String(locked));
+  $("mapNote").textContent = locked
+    ? `Locked · score over ${UNLOCK[shown].toLocaleString("en")} to open`
+    : next
+      ? `${open} of ${ids.length} open · ${MAPS[next]} at ${UNLOCK[next].toLocaleString("en")}`
+      : `All ${ids.length} open`;
+}
+
+// ‹ and ›: every map in turn, round and round. An open one is picked; a
+// locked one is only shown, greyed, and the last open pick stays the map
+// a game starts on.
+let viewMap = null;
+function stepMap(dir) {
+  const ids = Object.keys(MAPS),
+    i = ids.indexOf(viewMap ?? opt.map),
+    id = ids[(i + dir + ids.length) % ids.length];
+  if (mapOpen(id)) return setMap(id);
+  viewMap = id;
+  showMaps();
 }
 
 // ── Game speed ──────────────────────────────────────────────────────────────
@@ -769,6 +808,22 @@ function initUI() {
   $("ctBack").addEventListener("click", () => {
     $("controls").classList.add("hidden");
     $("title").classList.remove("hidden");
+  });
+  // Settings: the switches, a screen of their own like the controls.
+  $("bSettings").addEventListener("click", () => {
+    $("title").classList.add("hidden");
+    $("settings").classList.remove("hidden");
+  });
+  $("setBack").addEventListener("click", () => {
+    $("settings").classList.add("hidden");
+    $("title").classList.remove("hidden");
+  });
+  // The map picker: ‹ and › step, the name opens every map's button.
+  $("mapPrev").addEventListener("click", () => stepMap(-1));
+  $("mapNext").addEventListener("click", () => stepMap(1));
+  $("mapName").addEventListener("click", () => {
+    const open = !$("maps").classList.toggle("hidden");
+    $("mapName").setAttribute("aria-expanded", String(open));
   });
   // About opens over any screen; one from the desktop menu mid-game pauses
   // it first (a match carries on, as for its menu).
