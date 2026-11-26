@@ -735,9 +735,9 @@ body.touch #msg {
   width: clamp(64px, 12vw, 92px);
   filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
 }
-#mascot svg {
+#mascot {
   display: block;
-  width: 100%;
+  height: auto;
 }
 h1 {
   margin: 0;

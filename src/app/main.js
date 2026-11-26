@@ -193,6 +193,12 @@ else {
     }
     serveWww();
     buildMenu();
+    // Unpackaged (make debug), the Dock would show Electron's own icon: give
+    // it the app's, from the macOS rendering with its transparent margin
+    // (make icons). A packaged build has it from its .icns already.
+    const dockIcon = path.join(__dirname, "..", "icons", "mac.png");
+    if (!app.isPackaged && app.dock && fs.existsSync(dockIcon))
+      app.dock.setIcon(dockIcon);
     // The page asks for its startup check itself, ten seconds in, if the
     // player has turned automatic checks on: the setting is the page's, kept
     // in localStorage with the game's other options.

@@ -46,7 +46,6 @@ let hudT = 0,
 export function initHud() {
   rc = $("radar").getContext("2d");
   sc = $("strip").getContext("2d");
-  drawMascot();
 }
 
 // The plane just picked, in the top right corner for PLANE_TAG seconds: its
@@ -336,25 +335,4 @@ function teamPanel() {
       return row;
     }),
   );
-}
-
-// The hippo pilot for the title card (original art): ears, cyan goggles-eyes,
-// nostrils and a red scarf, in the HUD's colours.
-function drawMascot() {
-  $("mascot").innerHTML = `<svg viewBox="0 0 140 124" aria-hidden="true">
-    <ellipse cx="32" cy="20" rx="15" ry="14" fill="#9a95b8"/>
-    <ellipse cx="108" cy="20" rx="15" ry="14" fill="#9a95b8"/>
-    <ellipse cx="32" cy="22" rx="8" ry="7" fill="#ff9ec7"/>
-    <ellipse cx="108" cy="22" rx="8" ry="7" fill="#ff9ec7"/>
-    <rect x="8" y="16" width="124" height="90" rx="44" fill="#9a95b8"/>
-    <rect x="16" y="62" width="108" height="40" rx="20" fill="#a9a4c6"/>
-    <ellipse cx="50" cy="46" rx="11" ry="12" fill="#55ffff"/>
-    <ellipse cx="90" cy="46" rx="11" ry="12" fill="#55ffff"/>
-    <circle cx="53" cy="42" r="3.5" fill="#fff"/>
-    <circle cx="93" cy="42" r="3.5" fill="#fff"/>
-    <ellipse cx="34" cy="78" rx="8" ry="4.5" fill="#3a3550"/>
-    <ellipse cx="106" cy="78" rx="8" ry="4.5" fill="#3a3550"/>
-    <path d="M34 102 Q70 112 106 102 L104 114 Q70 122 36 114 Z" fill="#ff5555"/>
-    <path d="M80 110 L92 124 L100 118 L90 108 Z" fill="#e04848"/>
-  </svg>`;
 }
