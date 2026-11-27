@@ -1,7 +1,7 @@
 {
   "name": "duelhippo",
   "productName": "Duel Hippo",
-  "version": "0.9.4",
+  "version": "0.9.6",
   "description": "Duel Hippo — a 3D biplane dogfighter in the spirit of the 1984 side-scrollers. Part of the Hippo family.",
   "author": "Jason Figge",
   "license": "GPL-3.0-or-later",
