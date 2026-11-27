@@ -157,7 +157,7 @@ export default function build(kit) {
       l.az = Math.atan2(to.z, to.x);
       l.el = Math.atan2(to.y, Math.hypot(to.x, to.z));
       if ((l.cd -= dt) <= 0 && flakAt(l.at, BEAM.length, 0.03)) {
-        l.cd = BEAM.rate;
+        l.cd = BEAM.rate * kit.flakPace();
         // Once a hold, not every shot: it would bury every other message.
         if (!l.warned) say("Searchlight! Break out of the beam", 1.5);
         l.warned = true;

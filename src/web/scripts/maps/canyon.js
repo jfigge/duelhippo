@@ -654,7 +654,10 @@ export default function build(kit) {
       if ((f.cd -= dt) > 0) continue;
       muzzle.set(t.x, t.y + 5, t.z);
       if (kit.flakAt(muzzle, BURST.range, BURST.spread, HURT)) {
-        f.cd = ++f.n >= BURST.n ? ((f.n = 0), BURST.rest) : BURST.gap;
+        f.cd =
+          ++f.n >= BURST.n
+            ? ((f.n = 0), BURST.rest * kit.flakPace())
+            : BURST.gap;
         kit.puff(muzzle, 0x555555, 1, 2, 1, 0.6, 3);
       } else {
         f.n = 0;

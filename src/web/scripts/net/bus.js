@@ -35,6 +35,7 @@ export const net = {
   mode: null, // "dogfight" | "flag" | "endless"
   map: "field", // the map (constants.js MAPS)
   weather: "sunny", // the organiser's weather (constants.js WEATHERS)
+  difficulty: 2, // the organiser's level (constants.js DIFFICULTY)
   ff: false, // friendly fire: teammates can hurt each other
   teams: 0, // how many teams this match has
   // seat → {seat, h, n, team}: everyone in the match, this player included.

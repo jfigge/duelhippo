@@ -46,7 +46,7 @@ import {
 } from "./util.js";
 import { EB, LANE } from "./constants.js";
 import { scene, camera } from "./scene.js";
-import { S, game } from "./state.js";
+import { S, game, level } from "./state.js";
 import { sfx } from "./audio.js";
 import { puff, boom } from "./effects.js";
 import { say } from "./msg.js";
@@ -211,7 +211,11 @@ export function updEnemy(e, dt) {
   let tgt;
   if (hunting) {
     const d = T.pos.distanceTo(e.pos);
-    tgt = tv2.copy(T.pos).addScaledVector(T.vel, clamp(d / 440, 0, 1.2));
+    // Leading the target by the time a round takes to get there: less of
+    // it on an easier level (constants.js DIFFICULTY).
+    tgt = tv2
+      .copy(T.pos)
+      .addScaledVector(T.vel, clamp(d / 440, 0, 1.2) * level().lead);
   } else {
     e.t += dt * 0.25;
     tgt = tv2.set(
@@ -229,7 +233,7 @@ export function updEnemy(e, dt) {
     if (e.pos.x < LANE.min + 100) to.set(200, 40, 0);
     else if (e.pos.x > LANE.max + 100) to.set(-200, 40, 0);
     const want = Math.atan2(to.y, to.x),
-      k = e.turn * 1.4 * dt;
+      k = e.turn * 1.4 * level().turn * dt;
     e.th = wrapA(e.th + clamp(wrapA(want - e.th), -k, k));
     const c = Math.cos(e.th);
     if (c < -0.2) e.phT = PI;
@@ -262,7 +266,7 @@ export function updEnemy(e, dt) {
     if (ang > 1e-4)
       nf.applyAxisAngle(
         tv.copy(b.f).cross(des).normalize(),
-        Math.min(ang, e.turn * land.agile * dt),
+        Math.min(ang, e.turn * land.agile * level().turn * dt),
       );
     nf.y = clamp(nf.y, -0.7, 0.7);
     nf.normalize();
@@ -288,25 +292,27 @@ export function updEnemy(e, dt) {
   // A plane being repaired in flight is let be (repair.js).
   if (hunting && e.cd <= 0 && !(T === P && repairing())) {
     tv.copy(T.pos).sub(e.pos);
-    const d = tv.length();
-    if (d < 420 && b.f.dot(tv.divideScalar(d)) > 0.982) {
-      const dir = tv
-        .copy(b.f)
-        .add(
-          tv2.set(
-            rnd(-0.025, 0.025),
-            rnd(-0.025, 0.025),
-            game.mode === "classic" ? 0 : rnd(-0.025, 0.025),
-          ),
-        )
-        .normalize();
+    const d = tv.length(),
+      L = level();
+    if (d < L.range && b.f.dot(tv.divideScalar(d)) > L.cone) {
+      const s = L.spread,
+        dir = tv
+          .copy(b.f)
+          .add(
+            tv2.set(
+              rnd(-s, s),
+              rnd(-s, s),
+              game.mode === "classic" ? 0 : rnd(-s, s),
+            ),
+          )
+          .normalize();
       fire(tv2.copy(e.pos).addScaledVector(b.f, 5), dir, e.speed + 380, "e");
       // The other machines fire the same round, and judge their own hits.
       if (net.on)
         send({ t: "ef", o: v3(tv2), d: unit3(dir), s: e.speed + 380 });
       sfx.egun(camera.position.distanceTo(e.pos));
       e.burst++;
-      e.cd = e.burst > 7 ? ((e.burst = 0), 1.3) : 0.11;
+      e.cd = e.burst > 7 ? ((e.burst = 0), L.rest) : 0.11;
     }
   }
   if (e.pos.y < groundY(e.pos.x, e.pos.z, e.pos.y) + 2)

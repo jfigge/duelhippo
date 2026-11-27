@@ -30,8 +30,10 @@ will fail. Say so, and agree with the user how to re-baseline it. Do not
 loosen the tolerance to make it pass.
 
 The port adds these things the prototype lacks. Apart from the enemy-turn
-fix, which the suites' copy of the prototype gets too, none of them changes
-keyboard gameplay at full speed, which is what the equivalence suites run:
+fix, which the suites' copy of the prototype gets too, and the difficulty
+(whose level 4 is the prototype's, and which the suites fly), none of them
+changes keyboard gameplay at full speed, which is what the equivalence
+suites run:
 
 - **Game speed.** `opt.speed` scales `dt` in `frame()`, after the 50 ms cap.
   The HUD and title screen keep real time. It is tested in
@@ -141,6 +143,17 @@ keyboard gameplay at full speed, which is what the equivalence suites run:
   shortest turn passed near straight down, and the ±0.7 pitch clamp held
   it in a steep dive. Any future deliberate fix to the prototype's
   behaviour goes there too.
+- **Difficulty** (`DIFFICULTY` in `constants.js`, `level()` in
+  `state.js`): 1 to 5, how hard the enemy flies and shoots. Level 4 is
+  the prototype's literals exactly (each factor 1, so the arithmetic is
+  unchanged); below it the flyers turn slower, fire nearer and wilder,
+  rest longer, lead less and are fewer, and flak scatters wider and rests
+  longer (`flakPace` in the maps kit); 5 is harder. A new player starts on
+  `DEFAULT_LEVEL` (2), chosen on Settings or the pause menu and kept in
+  `opt.difficulty`; in a team game the organiser's (`setup.difficulty`)
+  sets `game.level`. `loadPort` boots every port test on level 4 unless
+  asked otherwise, so the equivalence suites compare against the
+  prototype. Tested in `difficulty.test.js`.
 - **Aim down the sights** (`ADS` in `constants.js`; `aiming()` in
   `flight.js`): Shift or Caps Lock in Free flight. Off, its factors are 1
   and the view is untouched. Tested in `sights.test.js`.

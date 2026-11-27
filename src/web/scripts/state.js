@@ -36,6 +36,9 @@ import {
   SPEED_KEY,
   WEATHERS,
   WEATHER_KEY,
+  DIFFICULTY,
+  DEFAULT_LEVEL,
+  DIFFICULTY_KEY,
 } from "./constants.js";
 
 export const S = {
@@ -69,21 +72,24 @@ export const game = {
   state: "title", // 'title' | 'play' | 'over'
   paused: false,
   camZoom: 0, // classic: near/far · free: chase/hood/cockpit (camera.js)
+  level: DEFAULT_LEVEL, // the difficulty flown: the player's, or a match's
   respawnT: 0,
 };
 
 // Player options. `speed` scales game time (constants.js SPEEDS), `invert`
 // flips pitch, `plane` is the plane type (constants.js PLANES) the player
-// last picked, `map` the map (constants.js MAPS) and `weather` the weather
-// (constants.js WEATHERS). All are remembered between sessions; anything
-// unrecognised in storage reads as full speed, normal pitch, the Kite, the
-// Countryside and sunshine.
+// last picked, `map` the map (constants.js MAPS), `weather` the weather
+// (constants.js WEATHERS) and `difficulty` the level (constants.js
+// DIFFICULTY). All are remembered between sessions; anything unrecognised
+// in storage reads as full speed, normal pitch, the Kite, the Countryside,
+// sunshine and DEFAULT_LEVEL.
 export const opt = {
   invert: false,
   speed: 1,
   plane: 0,
   map: "field",
   weather: "sunny",
+  difficulty: DEFAULT_LEVEL,
 };
 try {
   const saved = +window.localStorage.getItem(SPEED_KEY);
@@ -96,6 +102,12 @@ try {
   if (Object.hasOwn(MAPS, map) && mapOpen(map)) opt.map = map;
   const weather = window.localStorage.getItem(WEATHER_KEY);
   if (WEATHERS.includes(weather)) opt.weather = weather;
+  const level = window.localStorage.getItem(DIFFICULTY_KEY);
+  if (level !== null && DIFFICULTY[level]) opt.difficulty = +level;
 } catch {
   // No storage: full speed, normal pitch and the Kite each session.
 }
+
+game.level = opt.difficulty;
+// How hard the enemy is now (constants.js DIFFICULTY).
+export const level = () => DIFFICULTY[game.level];

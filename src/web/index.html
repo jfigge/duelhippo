@@ -208,6 +208,8 @@
           ><button id="bInvert" class="ghost"><i>Pitch</i> normal</button>
           <span>Game speed <i>(one player)</i></span
           ><button id="bSpeed" class="ghost"><i>Speed</i> 100%</button>
+          <span>Enemy <i>(1 easiest, 5 hardest)</i></span
+          ><button id="bLevel" class="ghost"><i>Difficulty</i> 2 Easy</button>
           <span>Sound</span
           ><button id="bMute" class="ghost"><i>Sound</i> on</button>
           <span class="updRow hidden">Check for updates</span
@@ -416,6 +418,12 @@
           <span>Slow the game down while you learn to fly.</span>
           <button id="bSpeedPause" class="ghost"><i>Speed</i> 100%</button>
         </div>
+        <div class="foot">
+          <span>How hard the enemy flies and shoots.</span>
+          <button id="bLevelPause" class="ghost">
+            <i>Difficulty</i> 2 Easy
+          </button>
+        </div>
       </div>
     </section>
 
@@ -472,7 +480,8 @@
           <div class="pick">
             <select id="onLayout" aria-label="Teams"></select
             ><button id="onFF"><i>Friendly fire</i> off</button
-            ><button id="onWeather"><i>Weather</i> sunny</button>
+            ><button id="onWeather"><i>Weather</i> sunny</button
+            ><button id="onLevel"><i>Difficulty</i> 2 Easy</button>
           </div>
           <p id="onDesc" class="pickNote"></p>
           <p id="onRules" class="pickNote"></p>

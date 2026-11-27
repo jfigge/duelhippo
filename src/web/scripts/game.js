@@ -41,9 +41,11 @@ import {
   WEATHER_NAMES,
   WEATHER_TAGS,
   WEATHER_KEY,
+  LEVEL_NAMES,
+  DIFFICULTY_KEY,
 } from "./constants.js";
 import { scene, camera } from "./scene.js";
-import { S, game, opt, mapOpen, unlockAll } from "./state.js";
+import { S, game, opt, mapOpen, unlockAll, level } from "./state.js";
 import { sfx } from "./audio.js";
 import { updParticles } from "./effects.js";
 import { say } from "./msg.js";
@@ -146,7 +148,11 @@ function update(dt) {
   // flies one, and draws the others' (net/match.js); the other team games
   // have none.
   if (!net.on && !run.on) {
-    const maxE = Math.min(5, 2 + Math.floor(S.kills / 4) + S.wave);
+    // Fewer at once on an easier level (constants.js DIFFICULTY).
+    const maxE = Math.max(
+      1,
+      Math.min(5, 2 + Math.floor(S.kills / 4) + S.wave) + level().more,
+    );
     S.spawnT -= dt;
     if (S.spawnT <= 0 && enemies.filter((e) => e.alive).length < maxE) {
       spawnEnemy();
@@ -209,6 +215,7 @@ export function startGame(m) {
   // always the Countryside, the prototype's. The weather likewise: the
   // organiser's in a match.
   setWeather(net.on ? net.weather : opt.weather);
+  game.level = net.on ? net.difficulty : opt.difficulty;
   useMap(net.on ? net.map : m === "classic" || course ? "field" : opt.map);
   sfx.init();
   sfx.resume();
@@ -635,6 +642,7 @@ function toTitle() {
   endCourse();
   resetRepair();
   setWeather(opt.weather);
+  game.level = opt.difficulty;
   useMap(opt.map);
   P.ghost = false;
   wear(-1);
@@ -772,6 +780,27 @@ function setInvert(v) {
   }
   for (const id of ["bInvert", "bInvertPause"])
     setLabel($(id), "Pitch", v ? "inverted" : "normal");
+}
+
+// ── Difficulty ──────────────────────────────────────────────────────────────
+// How hard the enemy is (constants.js DIFFICULTY), remembered. The buttons
+// on Settings and the pause menu step through the levels. A match's is the
+// organiser's, and stays.
+function setDifficulty(v, persist = true) {
+  opt.difficulty = v;
+  if (persist)
+    try {
+      window.localStorage.setItem(DIFFICULTY_KEY, v);
+    } catch {
+      // No storage: the setting lasts the session.
+    }
+  if (!net.on) game.level = v;
+  for (const id of ["bLevel", "bLevelPause"])
+    setLabel($(id), "Difficulty", LEVEL_NAMES[v]);
+}
+function cycleDifficulty() {
+  if (net.on) return say("The organiser sets the difficulty of a match", 1.5);
+  setDifficulty((opt.difficulty % 5) + 1);
 }
 
 // The I key, in play.
@@ -912,6 +941,7 @@ function initUI() {
     speed: () => opt.speed,
     map: () => opt.map,
     weather: () => opt.weather,
+    difficulty: () => opt.difficulty,
   });
   mapButtons($("maps"), "map");
   // Its own line, which no short-window rule hides.
@@ -936,6 +966,9 @@ function initUI() {
   for (const id of ["bInvert", "bInvertPause"])
     $(id).addEventListener("click", () => setInvert(!opt.invert));
   setInvert(opt.invert);
+  for (const id of ["bLevel", "bLevelPause"])
+    $(id).addEventListener("click", cycleDifficulty);
+  setDifficulty(opt.difficulty, false);
   $("best").textContent = S.best;
   document.body.classList.toggle("touch", isTouch);
 

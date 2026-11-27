@@ -472,7 +472,8 @@ export default function build(kit) {
         gz = s * 4.4;
       gun.set(t.x + gx * c + gz * sn, t.y + 0.6, t.z - gx * sn + gz * c);
       if (flakAt(gun, 500, 0.035)) {
-        a.cd = ++a.burst < 3 ? 0.16 : 2.2 + Math.random() * 1.2;
+        a.cd =
+          ++a.burst < 3 ? 0.16 : (2.2 + Math.random() * 1.2) * kit.flakPace();
         if (a.burst >= 3) a.burst = 0;
       } else {
         a.burst = 0;

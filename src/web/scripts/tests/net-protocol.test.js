@@ -40,6 +40,11 @@ const VERSIONS = {
     maps: "field sky arctic zeppelin volcano city sea storm night canyon",
     planes: "kite hornet lancer brute",
   },
+  // setup carries the difficulty.
+  8: {
+    maps: "field sky arctic zeppelin volcano city sea storm night canyon",
+    planes: "kite hornet lancer brute",
+  },
 };
 
 test("new maps or planes mean a new protocol version", () => {

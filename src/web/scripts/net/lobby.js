@@ -36,7 +36,14 @@ import { net } from "./bus.js";
 import { serverUrl, serverHint } from "./config.js";
 import { Mesh } from "./link.js";
 import { PROTO } from "./protocol.js";
-import { MAPS, WEATHERS, FIXED_WEATHER } from "../constants.js";
+import {
+  MAPS,
+  WEATHERS,
+  FIXED_WEATHER,
+  DIFFICULTY,
+  DEFAULT_LEVEL,
+  LEVEL_NAMES,
+} from "../constants.js";
 import { mapOpen } from "../state.js";
 import { matchMessage, peerLeft, abandonMatch, settleNow } from "./match.js";
 import {
@@ -108,6 +115,7 @@ function blank() {
     mode: "dogfight",
     map: "field",
     weather: "sunny",
+    difficulty: DEFAULT_LEVEL,
     ff: false,
     speed: 1,
     roster: [],
@@ -173,6 +181,11 @@ export function initLobby(actions) {
       if (mapOpen(b.dataset.lmap)) organise({ map: b.dataset.lmap });
     });
   $("onFF").addEventListener("click", () => organise({ ff: !setup.ff }));
+  // The enemy's level, everyone's: in Endless enemies every machine flies
+  // flyers, and on any map the flak.
+  $("onLevel").addEventListener("click", () =>
+    organise({ difficulty: (setup.difficulty % 5) + 1 }),
+  );
   // Every machine flies the organiser's weather: one player cannot clear
   // the fog the rest fly in.
   $("onWeather").addEventListener("click", () => {
@@ -247,6 +260,7 @@ function connected(m) {
   // The organiser's first offer is the map they fly alone.
   setup.map = act.map();
   setup.weather = act.weather();
+  setup.difficulty = act.difficulty();
   setup.roster = [{ seat: m.seat, team: 0 }];
   shownGroup = null;
   rosterKey = "";
@@ -472,6 +486,7 @@ function cleanSetup(m) {
     mode: MODES[m.mode] ? m.mode : "dogfight",
     map: m.map,
     weather: WEATHERS.includes(m.weather) ? m.weather : "sunny",
+    difficulty: DIFFICULTY[m.difficulty] ? m.difficulty : DEFAULT_LEVEL,
     ff: m.ff === true,
     speed: [0.25, 0.5, 0.75, 1].includes(m.speed) ? m.speed : 1,
     roster,
@@ -510,6 +525,7 @@ function publish() {
     mode: setup.mode,
     map: setup.map,
     weather: setup.weather,
+    difficulty: setup.difficulty,
     ff: setup.ff,
     speed: setup.speed,
     roster: setup.roster.map((p) => [p.seat, p.team]),
@@ -575,6 +591,8 @@ function refresh() {
   $("onWeather").disabled = !boss || fixed;
   $("onFF").classList.toggle("on", setup.ff);
   $("onFF").disabled = !boss;
+  setLabel($("onLevel"), "Difficulty", LEVEL_NAMES[setup.difficulty]);
+  $("onLevel").disabled = !boss;
   $("onDesc").textContent =
     describe() + (boss ? "" : " · The organiser sets the game.");
   $("onRules").textContent = RULES[setup.mode];
@@ -660,6 +678,7 @@ const describe = () =>
   MAPS[setup.map] +
   (weatherOf() === "sunny" ? "" : ", " + weatherOf()) +
   " · Full 3D" +
+  ` · Level ${setup.difficulty}` +
   (setup.ff ? " · Friendly fire" : "") +
   (setup.speed < 1 ? ` · ${Math.round(setup.speed * 100)}% speed` : "");
 
@@ -751,6 +770,7 @@ function begin() {
   net.map = setup.map;
   net.weather = setup.weather;
   net.ff = setup.ff;
+  net.difficulty = setup.difficulty;
   net.teams = lay.teams;
   net.roster.clear();
   for (const p of lineUp) {

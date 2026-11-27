@@ -160,8 +160,11 @@ export function loadPrototype(seed) {
 
 // ── The port ────────────────────────────────────────────────────────────────
 // ES modules are per-process singletons, so this may run once per test file.
-export async function loadPort(seed) {
+// `level` is the difficulty (constants.js DIFFICULTY) the port boots on: 4,
+// the prototype's, unless a test asks for another (null: a new player's).
+export async function loadPort(seed, { level = 4 } = {}) {
   const w = makeWindow(readFileSync(PORT_HTML, "utf8"));
+  if (level !== null) w.localStorage.setItem("duelhippo.difficulty", level);
   globalThis.window = w;
   globalThis.document = w.document;
   Math.random = seededRandom(seed);

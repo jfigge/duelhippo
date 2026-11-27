@@ -95,6 +95,86 @@ export const WEATHER_KEY = "duelhippo.weather";
 // The maps whose weather never changes, and what it is.
 export const FIXED_WEATHER = { storm: "stormy", sea: "foggy" };
 
+// ── Difficulty ──────────────────────────────────────────────────────────────
+// Not part of the prototype. How hard the enemy is, 1 to 5: level 4 is the
+// prototype's (with its fixes: tests/harness.js PROTO_FIXES), the literals
+// of ai.js and the maps' flak, and the level the equivalence suites fly.
+// Below it the enemy planes turn more slowly (`turn`, × their rate), open
+// fire only nearer (`range`, m) and nearer dead ahead (`cone`, the cosine
+// off the nose), scatter their rounds more (`spread`, rad each axis), rest
+// longer between bursts (`rest`, s), lead the target less (`lead`, × the
+// prototype's) and are fewer at once (`more`, added to the prototype's
+// count, never under one). Flak scatters `flak` × more and rests `pace` ×
+// longer. Level 5 is harder than the prototype. A new player starts on
+// DEFAULT_LEVEL; in a team game the organiser picks.
+export const DIFFICULTY = {
+  1: {
+    turn: 0.55,
+    range: 260,
+    cone: 0.995,
+    spread: 0.07,
+    rest: 3.2,
+    lead: 0.2,
+    more: -2,
+    flak: 2.5,
+    pace: 2,
+  },
+  2: {
+    turn: 0.7,
+    range: 300,
+    cone: 0.992,
+    spread: 0.055,
+    rest: 2.5,
+    lead: 0.45,
+    more: -1,
+    flak: 2,
+    pace: 1.6,
+  },
+  3: {
+    turn: 0.85,
+    range: 360,
+    cone: 0.987,
+    spread: 0.04,
+    rest: 1.8,
+    lead: 0.75,
+    more: 0,
+    flak: 1.5,
+    pace: 1.3,
+  },
+  4: {
+    turn: 1,
+    range: 420,
+    cone: 0.982,
+    spread: 0.025,
+    rest: 1.3,
+    lead: 1,
+    more: 0,
+    flak: 1,
+    pace: 1,
+  },
+  5: {
+    turn: 1.15,
+    range: 480,
+    cone: 0.976,
+    spread: 0.018,
+    rest: 1,
+    lead: 1,
+    more: 1,
+    flak: 0.8,
+    pace: 0.8,
+  },
+};
+export const LEVELS = 5;
+export const DEFAULT_LEVEL = 2;
+export const LEVEL_NAMES = {
+  1: "1 Rookie",
+  2: "2 Easy",
+  3: "3 Fair",
+  4: "4 Veteran",
+  5: "5 Ace",
+};
+export const DIFFICULTY_KEY = "duelhippo.difficulty";
+
 // ── Repair in flight ────────────────────────────────────────────────────────
 // Not part of the prototype. F, once a flight, on a plane hurt but still
 // flying: a countdown from `count`, `tick` s a number, then a run of number

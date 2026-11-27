@@ -50,7 +50,7 @@ import {
   FIXED_WEATHER,
 } from "./constants.js";
 import { scene, camera, M, box, put, flat } from "./scene.js";
-import { game } from "./state.js";
+import { game, level } from "./state.js";
 import { say } from "./msg.js";
 import { sfx } from "./audio.js";
 import { puff, boom } from "./effects.js";
@@ -242,6 +242,8 @@ export function flakAt(from, range = 600, spread = 0.03, hurt = 1) {
       .sub(from);
   if (dir.length() > REACH) return false;
   dir.normalize();
+  // Wider on an easier level (constants.js DIFFICULTY).
+  spread *= level().flak;
   dir.x += (Math.random() - 0.5) * spread * 2;
   dir.y += (Math.random() - 0.5) * spread * 2;
   dir.z += (Math.random() - 0.5) * spread * 2;
@@ -308,6 +310,8 @@ export const kit = {
   runway,
   hangar,
   flakAt,
+  // How much longer the flak rests between bursts (constants.js DIFFICULTY).
+  flakPace: () => level().pace,
   navOn,
   shape,
   scene,
