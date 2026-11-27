@@ -21,8 +21,8 @@
 //
 // The player: a random id made the first time the game runs, kept on this
 // device and never shown. Three-letter initials for the one-player board
-// (short enough to leave little room for rude words; the server checks them
-// too) and a free-text name for two-player games. All three live in storage
+// (short enough to leave little room for rude words, and the few there are
+// refused, here and by the server: rude.js) and a free-text name for two-player games. All three live in storage
 // under PLAYER_KEY.
 //
 // One player: a single board for everyone, on the match server (src/server/
@@ -43,6 +43,7 @@
 
 import { serverUrl } from "./net/config.js";
 import { sha256 } from "./sha256.js";
+import { isRude } from "./rude.js";
 
 export const PLAYER_KEY = "duelhippo.player";
 export const PENDING_KEY = "duelhippo.pending";
@@ -107,7 +108,7 @@ export function cleanInitials(v) {
   const s = String(v ?? "")
     .toUpperCase()
     .replace(/[^A-Z]/g, "");
-  return s.length === 3 ? s : null;
+  return s.length === 3 && !isRude(s) ? s : null;
 }
 
 // What a player may call themselves in a match: letters, digits and a little

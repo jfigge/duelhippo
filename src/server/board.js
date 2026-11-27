@@ -26,13 +26,18 @@
 // time it ran, never shown to anyone, so two players who both pick "ACE" are
 // two rows, and a player's new best replaces their own row and nobody
 // else's. Names are three letters A–Z: short enough to leave little room for
-// rude words, checked here as well as in the game.
+// rude words, and the few there are (the game's rude.js) are refused here as
+// well as in the game, and hidden on the way out if one got in before.
 //
 // Ranking is by score, then by who got there first: a later tie does not
 // push an earlier player down. A score may name the plane type it was flown
 // in (`pl`, an index into the game's PLANES); older ones do not.
 
+import { isRude } from "../web/scripts/rude.js";
+
 export const TOP = 10;
+// What a row whose initials are on the rude list shows instead.
+export const HIDDEN = "???";
 export const MODES = ["classic", "free"];
 export const PLANE_COUNT = 4; // the game's constants.js PLANES
 
@@ -51,7 +56,7 @@ export const parseId = (v) =>
 
 export function parseInitials(v) {
   const s = typeof v === "string" ? v.trim().toUpperCase() : "";
-  return INITIALS.test(s) ? s : null;
+  return INITIALS.test(s) && !isRude(s) ? s : null;
 }
 
 // A submission from the game: {id, n, sc, m, pl?}. Anything else is
@@ -78,7 +83,7 @@ const parsePlane = (v) =>
 
 // A row as the game sees it: `pl` only when the score has one.
 const shown = (r) => ({
-  n: r.n,
+  n: isRude(r.n) ? HIDDEN : r.n,
   sc: Number(r.sc),
   m: r.m,
   ...(r.pl !== null && r.pl !== undefined && { pl: Number(r.pl) }),

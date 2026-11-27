@@ -58,6 +58,12 @@ test("initials: three letters or nothing", () => {
   assert.equal(cleanInitials(undefined), null);
 });
 
+test("initials: the rude ones are refused", () => {
+  for (const bad of ["fuk", "K-K-K", "ASS"])
+    assert.equal(cleanInitials(bad), null, bad);
+  assert.equal(cleanInitials("nik"), "NIK", "a name that only looks rude");
+});
+
 test("match names: letters, digits, a little punctuation, short", () => {
   assert.equal(cleanName("  Red   Baron "), "Red Baron");
   assert.equal(cleanName("<img src=x>"), "img srcx");

@@ -8,12 +8,15 @@ name: Match server
 #   CLOUDFLARE_ACCOUNT_ID  the account it deploys to
 #
 # The server's address does not change between deploys, so nothing else
-# needs to know one happened.
+# needs to know one happened. The board's rude-initials list lives with the
+# game (src/web/scripts/rude.js) and is bundled into the server, so a change
+# there deploys it too.
 on:
   push:
     branches: [main]
     paths:
       - "src/server/**"
+      - "src/web/scripts/rude.js"
       - ".github/workflows/server.yml"
   workflow_dispatch: {}
 

@@ -29,6 +29,7 @@ import {
   parseInitials,
   MAX_SCORE,
   TOP,
+  HIDDEN,
 } from "../board.js";
 
 const fresh = () => {
@@ -42,6 +43,28 @@ test("initials are three letters, A to Z, and nothing else", () => {
   assert.equal(parseInitials(" Ace "), "ACE");
   for (const bad of ["AC", "ACES", "A1E", "A E", "ÁCE", "", null, 123])
     assert.equal(parseInitials(bad), null, String(bad));
+});
+
+test("rude initials are refused, and hidden if one got in before", () => {
+  for (const bad of ["FUK", "kkk", " ass "])
+    assert.equal(parseInitials(bad), null, bad);
+  assert.ok(parseSubmit({ id: id(1), n: "FUK", sc: 1, m: "free" }).error);
+  for (const ok of ["ACE", "NIK", "GAY", "BOB"])
+    assert.equal(parseInitials(ok), ok, ok);
+
+  // A row from before the list: the board still ranks it, under ???.
+  const b = fresh();
+  b.submit({ id: id(1), n: "FUK", sc: 900, m: "free" }, 1);
+  b.submit({ id: id(2), n: "ACE", sc: 500, m: "free" }, 2);
+  const r = b.read(id(1));
+  assert.deepEqual(
+    r.top.map((e) => e.n),
+    [HIDDEN, "ACE"],
+  );
+  assert.equal(r.me.n, HIDDEN, "the player's own place too");
+  // New initials replace it at once.
+  const after = b.submit({ id: id(1), n: "ZED", sc: 1, m: "free" }, 3);
+  assert.equal(after.top[0].n, "ZED");
 });
 
 test("a submission is checked from end to end", () => {

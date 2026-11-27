@@ -130,3 +130,33 @@ test("the sponsor link is offered everywhere but iOS", () => {
     "the support address stays",
   );
 });
+
+test("the privacy link is offered everywhere, iOS included", () => {
+  for (const [shell, bridge] of [
+    ["web"],
+    ["electron", { versions: {} }],
+    ["ios"],
+  ]) {
+    const a = shellPage(shell, bridge).pw.document.getElementById(
+      "aboutPrivacy",
+    );
+    assert.ok(!a.classList.contains("hidden"), shell);
+    // Absolute, so every shell hands it to the system browser (Electron's
+    // window-open handler, Capacitor's external navigation) rather than
+    // leaving the game for it.
+    assert.equal(
+      a.getAttribute("href"),
+      "https://hippoherd.com/duelhippo/privacy.html",
+    );
+    assert.equal(a.getAttribute("target"), "_blank");
+  }
+});
+
+test("the page it names ships in the build, under that name", () => {
+  const page = readFileSync(
+    new URL("../../public/privacy.html", import.meta.url),
+    "utf8",
+  );
+  assert.match(page, /<h1>Privacy<\/h1>/);
+  assert.match(page, /hippoherd@gmail\.com/);
+});
