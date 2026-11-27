@@ -28,8 +28,14 @@
 // and down is along gravity, back and forth along the screen's facing (level),
 // side to side across both, so it reads the same held landscape, as the game
 // is played, or upright.
+//
+// It also reads how the phone is tilted, for steering by tilt (tilt(),
+// TILT in constants.js). That comes from deviceorientation, not the
+// accelerometer's own numbers: its angles mean the same on iOS and Android,
+// where accelerationIncludingGravity has not always had the same sign, and
+// they carry no shake of the hand's acceleration.
 
-import { MOTION } from "./constants.js";
+import { MOTION, TILT } from "./constants.js";
 
 const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
 const unit = (v) => {
@@ -139,4 +145,106 @@ export function askMotion() {
     .call(window.DeviceMotionEvent)
     .then((s) => s === "granted")
     .catch(() => false);
+}
+
+// iOS asks for deviceorientation too, as for devicemotion: one prompt grants
+// both, and like that one it must be asked from inside a tap. True if it may.
+export function askOrientation() {
+  const ask = window.DeviceOrientationEvent?.requestPermission;
+  const mine =
+    typeof ask !== "function"
+      ? Promise.resolve(true)
+      : ask
+          .call(window.DeviceOrientationEvent)
+          .then((s) => s === "granted")
+          .catch(() => false);
+  return Promise.all([mine, askMotion()]).then(([a]) => a);
+}
+
+// ── Tilt steering ───────────────────────────────────────────────────────────
+// Which way is down, in the phone's own frame (x across the screen held
+// upright, y up it, z out of it), from deviceorientation's beta and gamma in
+// degrees. Its alpha (the compass heading) plays no part in where down is.
+export function downFrom(beta, gamma) {
+  const b = (beta * Math.PI) / 180,
+    g = (gamma * Math.PI) / 180;
+  return {
+    x: Math.cos(b) * Math.sin(g),
+    y: -Math.sin(b),
+    z: -Math.cos(b) * Math.cos(g),
+  };
+}
+
+// The same, in the screen's frame as the player sees it (x to the right, y
+// up, z out), for a screen turned `angle` degrees anticlockwise from the
+// phone's upright (screen.orientation.angle: 90 or −90/270 held landscape).
+export function toScreen(v, angle) {
+  const a = (angle * Math.PI) / 180,
+    c = Math.cos(a),
+    s = Math.sin(a);
+  return { x: v.x * c - v.y * s, y: v.x * s + v.y * c, z: v.z };
+}
+
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+// Past the dead zone, scaled so `full` reaches 1.
+const shape = (a, full) =>
+  Math.sign(a) *
+  Math.min(1, Math.max(0, Math.abs(a) - TILT.dead) / (full - TILT.dead));
+
+// A tilt reader: feed() it each reading; it gives { pitch, roll } in −1…1,
+// signed as the stick's (input.js): pitch > 0 pulls up, roll > 0 banks left;
+// and `held`, whether either is off centre. Roll is the screen's tilt from
+// level, as a steering wheel; pitch is how far the top edge has tipped
+// towards the player (up) or away (down) since centre().
+export function makeTilt() {
+  let zero = null, // the pitch angle held at centre()
+    sm = null, // the smoothed { p, r }
+    last = 0;
+  const t = {
+    feed(beta, gamma, angle, time) {
+      if (beta == null || gamma == null) return null;
+      const d = toScreen(downFrom(beta, gamma), angle);
+      // Up the screen held upright is 0; lying face up, π/2.
+      const p = Math.atan2(-d.z, -d.y),
+        r = Math.asin(Math.max(-1, Math.min(1, d.x)));
+      if (zero === null || !sm) {
+        zero ??= p;
+        sm = { p, r };
+      } else {
+        const k = 1 - Math.exp(-Math.max(0, time - last) / TILT.smooth);
+        sm.p += wrapPi(p - sm.p) * k;
+        sm.r += (r - sm.r) * k;
+      }
+      last = time;
+      // `|| 0`: never a −0 for a centred stick.
+      const pitch = shape(wrapPi(zero - sm.p), TILT.pitch) || 0,
+        roll = -shape(sm.r, TILT.roll) || 0;
+      return { pitch, roll, held: !!(pitch || roll) };
+    },
+    // The next reading becomes the level pitch.
+    centre() {
+      zero = sm = null;
+    },
+  };
+  return t;
+}
+
+export const tilt = makeTilt();
+
+// Listens for the phone's tilt, once; `onTilt({ pitch, roll, held })` for
+// each reading.
+let tiltBound = false;
+export function listenTilt(onTilt) {
+  if (tiltBound) return;
+  tiltBound = true;
+  window.addEventListener("deviceorientation", (e) => {
+    const angle = window.screen?.orientation?.angle ?? window.orientation ?? 0;
+    const r = tilt.feed(
+      e.beta,
+      e.gamma,
+      angle,
+      window.performance.now() / 1000,
+    );
+    if (r) onTilt(r);
+  });
 }

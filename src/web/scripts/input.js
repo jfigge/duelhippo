@@ -27,12 +27,19 @@
 //
 // Bindings are the prototype's (DESIGN.md, "Input"), plus the port's own:
 // the sights (Shift, Caps Lock; AIM on a touch screen), a missile (R; MSL),
-// and < > or 1–4 to change plane on the runway (or its arrows, or a swipe).
+// and < > or 1–4 to change plane on the runway (or its arrows, or a swipe),
+// and steering by tilting the phone in place of the stick (opt.tilt).
 
 import { $, clamp, setLabel } from "./util.js";
 import { game, opt } from "./state.js";
 import { sfx } from "./audio.js";
-import { listenMotion, askMotion } from "./motion.js";
+import {
+  listenMotion,
+  askMotion,
+  listenTilt,
+  askOrientation,
+  tilt,
+} from "./motion.js";
 
 export const isTouch =
   window.matchMedia("(pointer:coarse)").matches || "ontouchstart" in window;
@@ -156,6 +163,28 @@ const STEER = [
 // keyboard play, which must stay exactly the prototype's.
 export function autoLevel(inp) {
   return touch.flying && !touch.held && !inp.pitch && !inp.roll && !inp.yaw;
+}
+
+// With tilt on from a past session, the first tap of this one asks again:
+// an app's grant can lapse between launches. Once granted, it asks no more.
+let tiltOk = false;
+function askTilt() {
+  if (opt.tilt && !tiltOk) askOrientation().then((ok) => (tiltOk = ok));
+}
+
+// Turns tilt steering on or off. iOS lets a page read the phone's tilt only
+// if asked from inside a tap, so call this from one; it settles with whether
+// tilt is on.
+export function setTilt(on) {
+  const done = (v) => {
+    opt.tilt = v;
+    touch.pitch = touch.roll = 0;
+    touch.held = false;
+    document.body.classList.toggle("tilt", v);
+    return v;
+  };
+  if (!on) return Promise.resolve(done(false));
+  return askOrientation().then((ok) => done((tiltOk = ok)));
 }
 
 export function bindInput(actions) {
@@ -288,6 +317,32 @@ export function bindInput(actions) {
     if (act.repairing()) act.repairMove(kind);
   });
   $("bPause").addEventListener("click", () => act.togglePause());
+
+  // Tilt steering: the phone's tilt drives the stick's numbers, so the
+  // plane flies, inverts and auto-levels just as from the stick. Level is
+  // the angle the phone is held at as the flight goes live: at the start
+  // and on every resume. A repair by phone takes the phone's moves, so
+  // the plane flies itself level meanwhile.
+  window.addEventListener("click", askTilt);
+  let live = false;
+  listenTilt((r) => {
+    if (!opt.tilt || sid !== null) return;
+    const now = game.state === "play" && !game.paused;
+    if (now && !live) {
+      live = true;
+      tilt.centre();
+      touch.pitch = touch.roll = 0;
+      touch.held = false;
+      return;
+    }
+    live = now;
+    if (!now) return;
+    const hold = !act.repairing();
+    touch.pitch = hold ? r.pitch : 0;
+    touch.roll = hold ? r.roll : 0;
+    touch.held = hold && r.held;
+    touch.flying = true;
+  });
 
   // A sideways swipe across the scene changes plane, as < and > do: left
   // for the previous, right for the next. Not one that starts on a control.

@@ -27,6 +27,7 @@
 import {
   BEST_KEY,
   INVERT_KEY,
+  TILT_KEY,
   MAPS,
   MAP_KEY,
   UNLOCK,
@@ -79,10 +80,11 @@ export const game = {
 // Player options. `speed` scales game time (constants.js SPEEDS), `invert`
 // flips pitch, `plane` is the plane type (constants.js PLANES) the player
 // last picked, `map` the map (constants.js MAPS), `weather` the weather
-// (constants.js WEATHERS) and `difficulty` the level (constants.js
-// DIFFICULTY). All are remembered between sessions; anything unrecognised
-// in storage reads as full speed, normal pitch, the Kite, the Countryside,
-// sunshine and DEFAULT_LEVEL.
+// (constants.js WEATHERS), `difficulty` the level (constants.js
+// DIFFICULTY) and `tilt` steering by tilting the phone instead of the touch
+// stick (input.js). All are remembered between sessions; anything
+// unrecognised in storage reads as full speed, normal pitch, the Kite, the
+// Countryside, sunshine, DEFAULT_LEVEL and the stick.
 export const opt = {
   invert: false,
   speed: 1,
@@ -90,11 +92,13 @@ export const opt = {
   map: "field",
   weather: "sunny",
   difficulty: DEFAULT_LEVEL,
+  tilt: false,
 };
 try {
   const saved = +window.localStorage.getItem(SPEED_KEY);
   if (SPEEDS.includes(saved)) opt.speed = saved;
   opt.invert = window.localStorage.getItem(INVERT_KEY) === "1";
+  opt.tilt = window.localStorage.getItem(TILT_KEY) === "1";
   const plane = window.localStorage.getItem(PLANE_KEY);
   if (plane !== null && PLANES[+plane] && Number.isInteger(+plane))
     opt.plane = +plane;
