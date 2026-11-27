@@ -208,6 +208,15 @@ export const MOTION = {
   upright: 0.8,
 };
 
+// Tilt steering (motion.js tilt(), opt.tilt): the phone as the yoke, held
+// landscape. Angles in radians. Tilting the phone like a steering wheel
+// banks the plane, full roll at `roll`. Tipping its top edge towards you
+// pulls up and away pushes down, full pitch at `pitch`, measured from the
+// angle the phone was held at when the flight began (or the game was
+// resumed). Inside `dead` on an axis counts as centred. `smooth` is the
+// time constant (s) that takes the hand's tremor out.
+export const TILT = { roll: 0.5, pitch: 0.4, dead: 0.06, smooth: 0.08 };
+
 // Maps are earned: each opens once the best one-player score (any mode) is
 // more than its number, 1,000 more than the one before. The Countryside is
 // always open. The hardest flying comes last: the Sea's fog, the Storm, the
@@ -276,6 +285,9 @@ export const SPEED_KEY = "duelhippo.speed";
 
 // Inverted pitch (the prototype's I key), remembered between sessions.
 export const INVERT_KEY = "duelhippo.invert";
+
+// Steering by tilting the phone rather than the touch stick: "1" for tilt.
+export const TILT_KEY = "duelhippo.tilt";
 
 // The desktop app's automatic update check (updates.js): "1" for on. Off
 // unless the player turns it on, as in the other hippos; Help ▸ Check for

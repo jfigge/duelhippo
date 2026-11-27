@@ -121,6 +121,16 @@ suites run:
   numbers and moves come from `crypto`, never `Math.random`. Fullscreen
   moved from F to G. Tested in `repair.test.js`, `repair-phone.test.js`
   and `motion.test.js`.
+- **Tilt steering** (`opt.tilt`, `TILT` in `constants.js`; `makeTilt` in
+  `motion.js`): on a touch screen, Settings or the pause menu swaps the
+  stick for tilting the phone, held landscape. It reads `deviceorientation`
+  (its angles agree across iOS and Android) and writes the stick's own
+  `touch.pitch`/`roll`, so inverting and auto-level work as for the stick.
+  Level pitch is the angle held as the flight goes live (start, resume);
+  roll is the screen's tilt from level. A repair by phone zeroes it. iOS
+  asks permission from the switch's tap, and from the first tap of a
+  session that starts with it on. Off by default, so keyboard play is
+  untouched. Tested in `tilt.test.js` and `tilt-steer.test.js`.
 - **Night raid nav lights** (`NAV`, `navOn` in `world.js`): red to port,
   green to starboard on every plane, sharing two materials that only the
   Night raid shows. Shared, so `dispose` and `ghostly` leave them be.

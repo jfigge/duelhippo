@@ -206,6 +206,11 @@
         <div class="setRows">
           <span>Pitch</span
           ><button id="bInvert" class="ghost"><i>Pitch</i> normal</button>
+          <span class="touchOnly"
+            >Steer by <i>(the stick, or tilt the phone)</i></span
+          ><button id="bTilt" class="ghost touchOnly">
+            <i>Steering</i> stick
+          </button>
           <span>Game speed <i>(one player)</i></span
           ><button id="bSpeed" class="ghost"><i>Speed</i> 100%</button>
           <span>Enemy <i>(1 easiest, 5 hardest)</i></span
@@ -413,6 +418,10 @@
         <div class="foot">
           <span>Flip up and down on the stick and arrow keys.</span>
           <button id="bInvertPause" class="ghost"><i>Pitch</i> normal</button>
+        </div>
+        <div class="foot touchOnly">
+          <span>Steer with the stick, or by tilting the phone.</span>
+          <button id="bTiltPause" class="ghost"><i>Steering</i> stick</button>
         </div>
         <div class="foot" id="pauseFoot">
           <span>Slow the game down while you learn to fly.</span>

@@ -31,6 +31,7 @@ import { $, setLabel, mapButton, mapButtons } from "./util.js";
 import {
   BEST_KEY,
   INVERT_KEY,
+  TILT_KEY,
   SPEEDS,
   SPEED_KEY,
   MAPS,
@@ -79,7 +80,7 @@ import {
   fireMissile,
   clearMissiles,
 } from "./missiles.js";
-import { isTouch, releaseKeys, bindInput } from "./input.js";
+import { isTouch, releaseKeys, bindInput, setTilt } from "./input.js";
 import { updCamera, stepCam } from "./camera.js";
 import { updCockpit, cockpitOn, dash } from "./cockpit.js";
 import {
@@ -782,6 +783,30 @@ function setInvert(v) {
     setLabel($(id), "Pitch", v ? "inverted" : "normal");
 }
 
+// ── Tilt steering ───────────────────────────────────────────────────────────
+// A touch screen's choice between the stick and tilting the phone
+// (input.js), remembered, and each player's own in a match too. The switch
+// is a tap, which is where iOS lets the page ask to read the tilt; refused,
+// the stick stays.
+function showTilt(v) {
+  for (const id of ["bTilt", "bTiltPause"])
+    setLabel($(id), "Steering", v ? "tilt" : "stick");
+}
+function toggleTilt() {
+  const want = !opt.tilt;
+  setTilt(want).then((v) => {
+    try {
+      window.localStorage.setItem(TILT_KEY, v ? "1" : "0");
+    } catch {
+      // No storage: the setting lasts the session.
+    }
+    showTilt(v);
+    if (want && !v) say("Tilt steering needs motion access", 2);
+    else if (game.state === "play")
+      say(v ? "Tilt the phone to steer" : "Steering by the stick", 1.5);
+  });
+}
+
 // ── Difficulty ──────────────────────────────────────────────────────────────
 // How hard the enemy is (constants.js DIFFICULTY), remembered. The buttons
 // on Settings and the pause menu step through the levels. A match's is the
@@ -966,6 +991,10 @@ function initUI() {
   for (const id of ["bInvert", "bInvertPause"])
     $(id).addEventListener("click", () => setInvert(!opt.invert));
   setInvert(opt.invert);
+  for (const id of ["bTilt", "bTiltPause"])
+    $(id).addEventListener("click", toggleTilt);
+  showTilt(opt.tilt);
+  document.body.classList.toggle("tilt", opt.tilt);
   for (const id of ["bLevel", "bLevelPause"])
     $(id).addEventListener("click", cycleDifficulty);
   setDifficulty(opt.difficulty, false);

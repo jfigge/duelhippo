@@ -580,6 +580,12 @@ body.touch #help {
   pointer-events: auto;
   position: absolute;
 }
+/* Tilt steering (input.js): the phone is the stick, so the stick goes, and
+   the switch for it is a touch screen's only. */
+body.tilt #stick,
+body:not(.touch) .touchOnly {
+  display: none;
+}
 #stick {
   left: calc(22px + var(--sl));
   bottom: calc(22px + var(--sb));
